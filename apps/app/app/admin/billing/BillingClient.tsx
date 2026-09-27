@@ -771,7 +771,7 @@ export default function BillingClient({
           </div>
         </PageFadeIn>
       </main>
-      <Toast message={toast} onDismiss={() => setToast(null)} />
+      <Toast message={toast} tone="success" onDismiss={() => setToast(null)} />
     </DashboardShell>
   );
 }

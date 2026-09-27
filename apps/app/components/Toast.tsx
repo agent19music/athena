@@ -8,9 +8,10 @@ type ToastProps = {
   message: string | null;
   onDismiss: () => void;
   duration?: number;
+  tone?: "default" | "success";
 };
 
-export function Toast({ message, onDismiss, duration = 7000 }: ToastProps) {
+export function Toast({ message, onDismiss, duration = 7000, tone = "default" }: ToastProps) {
   const reduce = useReducedMotion();
 
   useEffect(() => {
@@ -36,14 +37,17 @@ export function Toast({ message, onDismiss, duration = 7000 }: ToastProps) {
             alignItems: "flex-start",
             gap: 12,
             maxWidth: 360,
-            background: "#131316",
+            background: tone === "success" ? "#15803d" : "#131316",
             color: "#ffffff",
             fontSize: 14,
             lineHeight: 1.5,
             fontWeight: 400,
             borderRadius: 10,
             padding: "14px 14px 14px 16px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.24)",
+            boxShadow:
+              tone === "success"
+                ? "0 8px 24px rgba(21, 128, 61, 0.28)"
+                : "0 8px 24px rgba(0,0,0,0.24)",
           }}
           role="status"
         >
