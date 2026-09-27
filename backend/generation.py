@@ -14,6 +14,7 @@ import json
 import os
 from typing import Callable
 
+import httpx
 from google import genai
 from google.genai import types
 
@@ -28,6 +29,12 @@ GEN_MAX_RETRIES = int(os.getenv("GEN_MAX_RETRIES", "3"))
 GEN_MAX_BACKOFF = float(os.getenv("GEN_MAX_BACKOFF", "8"))
 
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Tally retrospect only. Document chat and embeddings stay on Gemini.
+# BREV_BASE_URL is the OpenAI-compatible root, including /v1.
+BREV_BASE_URL = (os.getenv("BREV_BASE_URL") or "").rstrip("/")
+BREV_API_KEY = os.getenv("BREV_API_KEY") or ""
+BREV_MODEL = os.getenv("BREV_MODEL", "athena")
 
 
 def _call_gemini(build_response: Callable[[str], str]) -> str:
@@ -50,6 +57,58 @@ def _call_gemini(build_response: Callable[[str], str]) -> str:
             max_retries=2,
             max_backoff=GEN_MAX_BACKOFF,
         )
+
+
+def _brev_ready() -> bool:
+    return bool(BREV_BASE_URL and BREV_API_KEY)
+
+
+def _call_brev(system: str, user: str, *, max_tokens: int, json_mode: bool) -> str:
+    """One chat completion against the Brev vLLM server."""
+    payload: dict = {
+        "model": BREV_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0.0 if json_mode else 0.2,
+        "max_tokens": max_tokens,
+    }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    with httpx.Client(timeout=180.0) as client:
+        res = client.post(
+            f"{BREV_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {BREV_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+    if res.status_code >= 400:
+        raise RuntimeError(f"brev {res.status_code}: {res.text[:300]}")
+    content = res.json()["choices"][0]["message"].get("content") or ""
+    return content.strip()
+
+
+def _call_form_model(
+    system: str,
+    user: str,
+    gemini_build: Callable[[str], str],
+    *,
+    max_tokens: int,
+    json_mode: bool,
+) -> str:
+    """Form retrospect goes to Brev when configured. A down GPU falls through
+    to Gemini so chat still answers."""
+    if _brev_ready():
+        try:
+            text_value = _call_brev(system, user, max_tokens=max_tokens, json_mode=json_mode)
+            if text_value:
+                return text_value
+        except Exception as exc:  # noqa: BLE001
+            print(f"Brev form call failed, falling back to Gemini: {exc}")
+    return _call_gemini(gemini_build)
 
 
 _SYSTEM = (
@@ -131,10 +190,15 @@ _FORM_SYSTEM = (
     "You are Athena, an internal knowledge assistant for a company. The "
     "employee asked a question about a form or survey, and you have been given "
     "a real aggregate breakdown of every response to the matching question — "
-    "not one respondent's answer. Answer using ONLY the breakdown: name the "
-    "most common answer or state the counts/average as given, in 1 to 3 short "
-    "sentences. Never invent a response, count, or percentage that is not in "
-    "the breakdown, and never present a single line item as the whole picture "
+    "not one respondent's answer. Answer using ONLY the breakdown. "
+    "When the breakdown includes a sentiment line and issues or individual "
+    "answers, lead with the overall tone using those counts, then the top "
+    "three issues. Each issue gets its count, when a count is given, and one "
+    "short quote copied from the breakdown. "
+    "When the breakdown is choice counts or a numeric summary, name the most "
+    "common answer or state the average in 1 to 3 short sentences. "
+    "Never invent a response, count, or percentage that is not in the "
+    "breakdown, and never present a single line item as the whole picture "
     "if the breakdown lists several. If the breakdown does not actually answer "
     "the question, say so plainly."
 )
@@ -156,7 +220,7 @@ def _generate_form_sync(query: str, question_label: str, breakdown: str, history
         resp = _client.models.generate_content(model=model, contents=prompt, config=config)
         return (resp.text or "").strip()
 
-    return _call_gemini(build)
+    return _call_form_model(_FORM_SYSTEM, prompt, build, max_tokens=700, json_mode=False)
 
 
 async def synthesize_form_answer(
@@ -237,10 +301,9 @@ _SENTIMENT_SYSTEM = (
     "You classify the sentiment of survey free-text answers. For each numbered "
     "answer, decide whether the respondent's tone toward the thing they are "
     "describing is positive, negative, or neutral. Neutral covers factual or "
-    "purely descriptive answers with no evaluative charge. Reply with JSON only: "
-    'a list like [{"i": 1, "s": "negative"}, {"i": 2, "s": "neutral"}] '
-    "containing exactly one entry per numbered answer, using only those three "
-    "values."
+    "purely descriptive answers with no evaluative charge. Reply with JSON only, "
+    'as an object: {"labels": [{"i": 1, "s": "negative"}, {"i": 2, "s": "neutral"}]}. '
+    "Include exactly one entry per numbered answer, using only those three values."
 )
 
 
@@ -280,7 +343,7 @@ def _label_theme_sync(question: str, samples: list[str]) -> dict:
         resp = _client.models.generate_content(model=model, contents=prompt, config=config)
         return resp.text or ""
 
-    data = _parse_json(_call_gemini(build))
+    data = _parse_json(_call_form_model(_THEME_SYSTEM, prompt, build, max_tokens=300, json_mode=True))
     return {
         "label": str(data.get("label", "")).strip()[:120],
         "summary": str(data.get("summary", "")).strip()[:600],
@@ -311,11 +374,17 @@ def _sentiment_sync(texts: list[str]) -> list[str]:
         resp = _client.models.generate_content(model=model, contents=contents, config=config)
         return resp.text or ""
 
-    data = _parse_json(_call_gemini(build))
+    data = _parse_json(_call_form_model(_SENTIMENT_SYSTEM, contents, build, max_tokens=40 * len(texts) + 200, json_mode=True))
 
     allowed = {"positive", "negative", "neutral"}
     out = ["neutral"] * len(texts)
-    for item in data if isinstance(data, list) else []:
+    items = data if isinstance(data, list) else []
+    if isinstance(data, dict):
+        for key in ("labels", "results", "sentiments"):
+            if isinstance(data.get(key), list):
+                items = data[key]
+                break
+    for item in items:
         try:
             idx = int(item.get("i", 0)) - 1
         except (TypeError, ValueError):
