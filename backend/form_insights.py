@@ -218,6 +218,80 @@ def _breakdown_themes(org_id: str, form_id: str, question_id: str) -> str | None
     return header + "\nTop issues:\n" + "\n".join(lines)
 
 
+_OVERVIEW_MARKERS = (
+    "overview",
+    "summary",
+    "summarize",
+    "summarise",
+    "what are people saying",
+    "what are folks saying",
+    "what are clients saying",
+    "what did people say",
+    "what did clients say",
+    "sentiment",
+    "how do people feel",
+    "top issues",
+    "what can we do better",
+)
+
+
+def query_wants_overview(query: str) -> bool:
+    """A survey-wide read, not a match against one question label."""
+    folded = " ".join((query or "").lower().split())
+    return any(marker in folded for marker in _OVERVIEW_MARKERS)
+
+
+def build_form_overview(org_id: str) -> dict | None:
+    """Sentiment and a short sample for the busiest free-text questions.
+
+    Returns None when the org has no structured Tally answers yet. Callers
+    must not fall through to a single submission chunk in that case — that
+    chunk is one respondent's whole form.
+    """
+    with session_for_org(org_id) as session:
+        questions = session.execute(
+            text("""
+                SELECT fq.form_id, fq.question_id, fq.label, fq.kind, fd.name AS form_name,
+                       count(fa.id) AS n
+                FROM form_questions fq
+                JOIN form_definitions fd
+                  ON fd.org_id = fq.org_id AND fd.form_id = fq.form_id
+                JOIN form_answers fa
+                  ON fa.org_id = fq.org_id AND fa.form_id = fq.form_id
+                 AND fa.question_id = fq.question_id
+                 AND fa.answer_text IS NOT NULL AND fa.answer_text <> ''
+                WHERE fq.org_id = :org_id
+                  AND fq.kind IN ('short_text', 'long_text')
+                GROUP BY fq.form_id, fq.question_id, fq.label, fq.kind, fd.name
+                ORDER BY count(fa.id) DESC
+                LIMIT 4
+            """),
+            {"org_id": org_id},
+        ).mappings().all()
+
+    if not questions:
+        return None
+
+    blocks = [
+        "Overview of free-text survey questions. Summarize the tone and the "
+        "main points. Do not quote every answer and do not invent counts."
+    ]
+    for question in questions:
+        breakdown = _breakdown_themes(org_id, question["form_id"], question["question_id"])
+        if not breakdown:
+            continue
+        label = question["label"] or "Untitled question"
+        blocks.append(f'Question: "{label}"\n{breakdown}')
+
+    if len(blocks) == 1:
+        return None
+
+    return {
+        "form_name": questions[0]["form_name"] or "Survey",
+        "breakdown": "\n\n".join(blocks),
+    }
+
+
 def build_breakdown(org_id: str, question: dict) -> str | None:
     """Plain-text aggregate for `question`, or None if there's nothing to
     aggregate yet (caller should fall back to document search)."""
