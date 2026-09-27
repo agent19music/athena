@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import DashboardShell from "../../components/DashboardShell";
 import PageFadeIn from "../../components/PageFadeIn";
+import { userFacingError } from "../../lib/userFacingError";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
 const BACKEND_API_SECRET = process.env.BACKEND_API_SECRET ?? "";
@@ -38,7 +39,12 @@ function relativeTime(iso: string | null): string {
 function jobToActivity(j: Job) {
   const time = relativeTime(j.finished_at ?? j.started_at);
   if (j.status === "failed") {
-    return { label: "Sync failed", sub: j.error ?? "Ingestion error", time, dot: "#ef4444" };
+    return {
+      label: "Sync failed",
+      sub: userFacingError(j.error, "Sync failed. Try again."),
+      time,
+      dot: "#ef4444",
+    };
   }
   if (j.status === "running") {
     return { label: "Sync in progress", sub: "Indexing sources", time, dot: "#60a5fa" };
@@ -212,7 +218,18 @@ export default async function DashboardPage() {
                       <p style={{ fontSize: 13.5, fontWeight: 400, color: "#222", margin: 0, lineHeight: 1.35 }}>
                         {a.label}
                       </p>
-                      <p style={{ fontSize: 12, color: "#999", margin: 0, marginTop: 1 }}>
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: "#999",
+                          margin: 0,
+                          marginTop: 1,
+                          overflow: "hidden",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                        }}
+                      >
                         {a.sub}
                       </p>
                     </div>

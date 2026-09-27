@@ -1,8 +1,11 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useRef, useState } from "react";
 import { FileArrowUp, FolderSimplePlus } from "@phosphor-icons/react";
 import { Button } from "@/components/Button";
+import { uploadFailureReason, uploadToBackend } from "@/lib/uploadToBackend";
+import { userFacingError } from "@/lib/userFacingError";
 
 type UploadResult = {
   uploaded: number;
@@ -11,6 +14,7 @@ type UploadResult = {
 };
 
 export default function FileUploadCard() {
+  const { getToken } = useAuth();
   const [dragging, setDragging] = useState(false);
   const [state, setState] = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [result, setResult] = useState<UploadResult | null>(null);
@@ -32,25 +36,19 @@ export default function FileUploadCard() {
     }
 
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await res.json();
+      const bytes = Array.from(files).reduce((n, file) => n + file.size, 0);
+      const token = await getToken();
+      const res = await uploadToBackend(form, token, bytes);
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const detail = data?.detail;
-        setErrorMsg(
-          (typeof detail === "object" && detail?.message) ||
-            (typeof detail === "string" && detail) ||
-            data.error ||
-            (res.status === 402
-              ? "Plan limit reached. Upgrade on Billing."
-              : "Upload failed")
-        );
+        setErrorMsg(uploadFailureReason(res.status, data));
         setState("error");
       } else {
         setResult(data);
         setState("done");
       }
-    } catch {
-      setErrorMsg("Could not reach server");
+    } catch (err) {
+      setErrorMsg(err instanceof Error && err.message !== "Failed to fetch" ? err.message : "Could not reach server");
       setState("error");
     }
   }
@@ -149,7 +147,7 @@ export default function FileUploadCard() {
                 {result.skipped.map((s, i) => (
                   <li key={i} style={{ marginBottom: 2 }}>
                     <code style={{ fontSize: 11 }}>{s.name}</code>
-                    {" — "}{s.reason}
+                    {" — "}{userFacingError(s.reason, "Skipped")}
                   </li>
                 ))}
               </ul>

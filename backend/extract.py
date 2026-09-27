@@ -22,14 +22,8 @@ def extract_text(filename: str, content: bytes) -> str:
         return content.decode("utf-8", errors="replace")
 
     if ext == ".pdf":
-        import pdfplumber
-        pages = []
-        with pdfplumber.open(io.BytesIO(content)) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    pages.append(text.strip())
-        return "\n\n".join(pages)
+        text, _pages = _read_pdf(content)
+        return text
 
     if ext == ".docx":
         from docx import Document
@@ -76,12 +70,42 @@ def extract_text(filename: str, content: bytes) -> str:
     return ""  # unsupported — caller adds to skipped list
 
 
+def extract_pdf(content: bytes) -> tuple[str, int]:
+    """Plain text plus page count from one PDF parse."""
+    return _read_pdf(content)
+
+
 def pdf_page_count(content: bytes) -> int | None:
     """Best-effort page count for storage metadata (native PDF preview page
     jump). Returns None for anything that isn't a valid PDF."""
-    import pdfplumber
     try:
-        with pdfplumber.open(io.BytesIO(content)) as pdf:
-            return len(pdf.pages)
-    except Exception:
+        _text, pages = _read_pdf(content)
+        return pages
+    except ValueError:
         return None
+
+
+def _read_pdf(content: bytes) -> tuple[str, int]:
+    """Extract text with pypdf.
+
+    pdfplumber builds a layout model per page, which is a bad fit for the
+    512 MB production instance once multi-megabyte files actually arrive.
+    pypdf only walks the content stream. One open covers text and page count.
+    """
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise ValueError("This PDF is password-protected.")
+        pages: list[str] = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            if text.strip():
+                pages.append(text.strip())
+        return "\n\n".join(pages), len(reader.pages)
+    except ValueError:
+        raise
+    except PdfReadError as exc:
+        raise ValueError("Couldn't read this PDF.") from exc
