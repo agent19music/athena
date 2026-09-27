@@ -33,8 +33,9 @@ FORM_MATCH_THRESHOLD = float(os.getenv("FORM_MATCH_THRESHOLD", "0.72"))
 # Rows shown per breakdown — enough to name the shape of the data without
 # blowing up the synthesis prompt on a form with a long tail of options.
 TOP_CHOICES = 12
-TOP_THEMES = 8
-THEME_SAMPLES_PER_THEME = 2
+TOP_THEMES = 3
+THEME_SAMPLES_PER_THEME = 1
+RAW_ANSWER_CAP = 40
 
 
 async def match_form_question(query_embedding: list[float], org_id: str) -> dict | None:
@@ -111,7 +112,70 @@ def _breakdown_numeric(org_id: str, form_id: str, question_id: str) -> str | Non
     )
 
 
+def _sentiment_header(org_id: str, form_id: str, question_id: str) -> tuple[str, int]:
+    """Counts from the answer rows, so unclustered replies still show up."""
+    with session_for_org(org_id) as session:
+        row = session.execute(
+            text("""
+                SELECT count(*) AS n,
+                       count(*) FILTER (WHERE sentiment = 'positive') AS pos,
+                       count(*) FILTER (WHERE sentiment = 'negative') AS neg,
+                       count(*) FILTER (WHERE sentiment = 'neutral') AS neu
+                FROM form_answers
+                WHERE org_id = :org_id AND form_id = :form_id AND question_id = :question_id
+                  AND answer_text IS NOT NULL AND answer_text <> ''
+            """),
+            {"org_id": org_id, "form_id": form_id, "question_id": question_id},
+        ).mappings().first()
+    n = int(row["n"] or 0) if row else 0
+    if not n:
+        return "", 0
+    pos, neg, neu = int(row["pos"] or 0), int(row["neg"] or 0), int(row["neu"] or 0)
+    labelled = pos + neg + neu
+    line = f"{n} free-text responses."
+    if labelled:
+        line += f" Sentiment: {pos} positive, {neg} negative, {neu} neutral."
+        if labelled < n:
+            line += f" {n - labelled} unlabelled."
+    return line, n
+
+
+def _breakdown_raw_answers(org_id: str, form_id: str, question_id: str, total: int) -> str:
+    with session_for_org(org_id) as session:
+        rows = session.execute(
+            text("""
+                SELECT answer_text, sentiment
+                FROM form_answers
+                WHERE org_id = :org_id AND form_id = :form_id AND question_id = :question_id
+                  AND answer_text IS NOT NULL AND answer_text <> ''
+                ORDER BY created_at, id
+                LIMIT :limit
+            """),
+            {
+                "org_id": org_id,
+                "form_id": form_id,
+                "question_id": question_id,
+                "limit": RAW_ANSWER_CAP,
+            },
+        ).mappings().all()
+    lines = []
+    for row in rows:
+        tone = row["sentiment"] or "unlabelled"
+        text_value = " ".join((row["answer_text"] or "").split())
+        if len(text_value) > 280:
+            text_value = text_value[:277].rsplit(" ", 1)[0] + "…"
+        lines.append(f"- ({tone}) \"{text_value}\"")
+    note = ""
+    if total > len(rows):
+        note = f"\nShowing {len(rows)} of {total} answers."
+    return "Individual answers, not yet grouped:\n" + "\n".join(lines) + note
+
+
 def _breakdown_themes(org_id: str, form_id: str, question_id: str) -> str | None:
+    header, total = _sentiment_header(org_id, form_id, question_id)
+    if not total:
+        return None
+
     with session_for_org(org_id) as session:
         themes = session.execute(
             text("""
@@ -125,10 +189,11 @@ def _breakdown_themes(org_id: str, form_id: str, question_id: str) -> str | None
             {"org_id": org_id, "form_id": form_id, "question_id": question_id, "limit": TOP_THEMES},
         ).mappings().all()
 
-        if not themes:
-            return None
+    if not themes:
+        return header + "\n" + _breakdown_raw_answers(org_id, form_id, question_id, total)
 
-        lines = []
+    lines = []
+    with session_for_org(org_id) as session:
         for t in themes:
             samples = session.execute(
                 text("""
@@ -150,7 +215,7 @@ def _breakdown_themes(org_id: str, form_id: str, question_id: str) -> str | None
             summary = f" {t['summary']}" if t["summary"] else ""
             lines.append(f"- {t['label']} ({t['size']} responses, {sentiment}).{summary} e.g. {quotes}")
 
-    return "\n".join(lines)
+    return header + "\nTop issues:\n" + "\n".join(lines)
 
 
 def build_breakdown(org_id: str, question: dict) -> str | None:
