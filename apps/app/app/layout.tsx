@@ -5,7 +5,6 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import RebrandAlertBar from "../components/RebrandAlertBar";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -69,10 +68,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" className={cn("font-sans", geist.variable)} data-theme="light" style={{ colorScheme: "light" }}>
-        <body>
-          <RebrandAlertBar />
-          {children}
-        </body>
+        <body>{children}</body>
         <Analytics />
         <GoogleAnalytics gaId="G-NFHB1M7VJY" />
       </html>

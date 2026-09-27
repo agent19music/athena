@@ -17,7 +17,7 @@ export default function Nav() {
     <header
       style={{
         position: "fixed",
-        top: "var(--rebrand-banner-offset, 44px)",
+        top: 0,
         left: 0,
         right: 0,
         zIndex: 50,
