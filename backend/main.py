@@ -34,7 +34,7 @@ from sqlalchemy import func, text
 
 from auth import AuthContext, require_auth, require_backend_secret, require_read_auth
 import storage
-from extract import SUPPORTED, extract_text, pdf_page_count
+from extract import SUPPORTED, extract_pdf, extract_text
 from database import Conversation, DocumentChunk, Message, ensure_organization_exists, session_for_org
 from embeddings import embed_documents
 from ingest import create_ingest_job, run_ingestion
@@ -737,6 +737,8 @@ async def ingest_status(auth_ctx: AuthContext = Depends(require_read_auth)):
     """
     from database import IngestJob, get_session
 
+    from public_error import public_error
+
     org_id = auth_ctx.clerk_org_id
     with get_session() as db:
         jobs = (
@@ -754,7 +756,7 @@ async def ingest_status(auth_ctx: AuthContext = Depends(require_read_auth)):
                     "trigger": j.trigger,
                     "documents": j.documents,
                     "chunks": j.chunks,
-                    "error": j.error,
+                    "error": public_error(j.error, "Sync failed. Try again.") if j.error else None,
                     "started_at": j.started_at.isoformat() if j.started_at else None,
                     "finished_at": j.finished_at.isoformat() if j.finished_at else None,
                 }
@@ -780,13 +782,14 @@ async def ingest_job(job_id: str, auth_ctx: AuthContext = Depends(require_read_a
         )
         if not job:
             raise HTTPException(status_code=404, detail="No such ingestion job.")
+        from public_error import public_error
         return {
             "id": str(job.id),
             "status": job.status,
             "trigger": job.trigger,
             "documents": job.documents,
             "chunks": job.chunks,
-            "error": job.error,
+            "error": public_error(job.error, "Sync failed. Try again.") if job.error else None,
             "started_at": job.started_at.isoformat() if job.started_at else None,
             "finished_at": job.finished_at.isoformat() if job.finished_at else None,
         }
@@ -1238,6 +1241,7 @@ async def upload_files(
         if new_file_count:
             require_plan_capacity(db, org_id, "upload_files", extra_files=new_file_count)
 
+    print(f"Upload request: {len(files)} file(s)")
     docs = []
     skipped = []
 
@@ -1245,19 +1249,30 @@ async def upload_files(
         ext = Path(file.filename or "").suffix.lower()
 
         if ext not in SUPPORTED:
-            skipped.append({"name": file.filename, "reason": f"unsupported type ({ext or 'none'})"})
+            skipped.append({"name": file.filename, "reason": "This file type isn't supported."})
             continue
 
         raw = await file.read()
+        print(f"Upload file: {file.filename} ({len(raw)} bytes)")
 
+        page_count = None
         try:
-            text = extract_text(file.filename, raw)
+            if ext == ".pdf":
+                text, page_count = extract_pdf(raw)
+            else:
+                text = extract_text(file.filename, raw)
         except ValueError as e:
-            skipped.append({"name": file.filename, "reason": str(e)})
+            from public_error import public_error
+            skipped.append({"name": file.filename, "reason": public_error(str(e))})
+            continue
+        except Exception as e:
+            sentry_sdk.capture_exception(e)
+            print(f"Upload extract failed: {file.filename} ({len(raw)} bytes): {type(e).__name__}: {e}")
+            skipped.append({"name": file.filename, "reason": "Couldn't read this file. Try another copy."})
             continue
 
         if not text.strip():
-            skipped.append({"name": file.filename, "reason": "no extractable text"})
+            skipped.append({"name": file.filename, "reason": "This file has no readable text."})
             continue
 
         title = Path(file.filename).stem.replace("_", " ").replace("-", " ").title()
@@ -1290,7 +1305,7 @@ async def upload_files(
             "storage_path": storage_path,
             "mime_type": mime_type,
             "byte_size": len(raw),
-            "page_count": pdf_page_count(raw) if ext == ".pdf" else None,
+            "page_count": page_count,
         })
 
     if not docs:
@@ -1339,46 +1354,67 @@ async def upload_files(
                 },
             )
 
-    embeddings = await embed_documents([c["chunk_text"] for c in all_chunks])
+    try:
+        embeddings = await embed_documents([c["chunk_text"] for c in all_chunks])
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        print(f"Upload embed failed ({len(all_chunks)} chunks): {type(e).__name__}: {e}")
+        from public_error import public_error
+        raise HTTPException(
+            status_code=503,
+            detail=public_error(str(e), "Couldn't index this file. Try again in a few minutes."),
+        )
 
     seen_docs: set[str] = set()
-    with session_for_org(org_id) as session:
-        upserted = 0
-        for chunk, embedding in zip(all_chunks, embeddings):
-            # Clear a doc's old chunks once, on first sighting — deleting inside
-            # the loop would autoflush and drop chunks just inserted for the doc.
-            if chunk["doc_id"] not in seen_docs:
-                session.query(DocumentChunk).filter_by(
-                    doc_id=chunk["doc_id"], org_id=org_id
-                ).delete()
-                seen_docs.add(chunk["doc_id"])
+    try:
+        with session_for_org(org_id) as session:
+            upserted = 0
+            for chunk, embedding in zip(all_chunks, embeddings):
+                # Clear a doc's old chunks once, on first sighting — deleting inside
+                # the loop would autoflush and drop chunks just inserted for the doc.
+                if chunk["doc_id"] not in seen_docs:
+                    session.query(DocumentChunk).filter_by(
+                        doc_id=chunk["doc_id"], org_id=org_id
+                    ).delete()
+                    seen_docs.add(chunk["doc_id"])
 
-            session.add(DocumentChunk(
-                org_id=org_id,
-                doc_id=chunk["doc_id"],
-                title=chunk["title"],
-                chunk_text=chunk["chunk_text"],
-                embedding=embedding,
-                metadata_=chunk["metadata"],
-                source_type="upload",
-            ))
-            upserted += 1
+                session.add(DocumentChunk(
+                    org_id=org_id,
+                    doc_id=chunk["doc_id"],
+                    title=chunk["title"],
+                    chunk_text=chunk["chunk_text"],
+                    embedding=embedding,
+                    metadata_=chunk["metadata"],
+                    source_type="upload",
+                ))
+                upserted += 1
 
-        for doc in docs:
-            session.query(DocumentFile).filter_by(doc_id=doc["doc_id"], org_id=org_id).delete()
-            session.add(DocumentFile(
-                org_id=org_id,
-                doc_id=doc["doc_id"],
-                source_type="upload",
-                title=doc["title"],
-                storage_path=doc["storage_path"],
-                mime_type=doc["mime_type"],
-                byte_size=doc["byte_size"],
-                page_count=doc["page_count"],
-            ))
+            for doc in docs:
+                session.query(DocumentFile).filter_by(doc_id=doc["doc_id"], org_id=org_id).delete()
+                session.add(DocumentFile(
+                    org_id=org_id,
+                    doc_id=doc["doc_id"],
+                    source_type="upload",
+                    title=doc["title"],
+                    storage_path=doc["storage_path"],
+                    mime_type=doc["mime_type"],
+                    byte_size=doc["byte_size"],
+                    page_count=doc["page_count"],
+                ))
 
-        session.commit()
+            session.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        print(f"Upload store failed: {type(e).__name__}: {e}")
+        from public_error import public_error
+        raise HTTPException(
+            status_code=503,
+            detail=public_error(str(e), "Couldn't save this file. Try again."),
+        )
 
+    print(f"Upload indexed: {len(docs)} file(s), {upserted} chunks")
     return {
         "status": "ok",
         "uploaded": len(docs),

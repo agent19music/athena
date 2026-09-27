@@ -744,9 +744,10 @@ async def persist_form_submissions(org_id: str, docs: list[dict]) -> dict:
                 ))
         session.commit()
 
-        # New transaction: session_for_org re-applies SET LOCAL ROLE + GUC on
-        # after_begin. Without that, FORCE RLS rejects form_responses inserts.
-
+    # Fresh session so SET LOCAL ROLE + athena.org_id are applied on begin.
+    # Continuing after commit on the same session has dropped that scope in
+    # production and FORCE RLS then rejects form_responses inserts.
+    with session_for_org(org_id) as session:
         for sub in submissions:
             response = (
                 session.query(FormResponse)
@@ -992,7 +993,14 @@ async def run_ingestion(
 
         # Dual-write: the same submissions again as rows, for aggregates. Kept
         # after the chunk commit so a failure here cannot cost the RAG index.
-        form_stats = await persist_form_submissions(org_id, docs)
+        # A raised error used to fail the whole job and dump the SQL into the UI.
+        try:
+            form_stats = await persist_form_submissions(org_id, docs)
+        except Exception as exc:
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc)
+            print(f"Form store failed (chunks kept): {type(exc).__name__}: {str(exc)[:400]}")
+            form_stats = {"responses": 0}
 
         # Themes over the free text that just landed. Isolated because it calls
         # the LLM: a labelling or quota failure must leave the ingest completed,
@@ -1004,6 +1012,9 @@ async def run_ingestion(
             except Exception as exc:  # noqa: BLE001
                 print(f"Theme extraction failed (ingest still succeeded): {exc}")
     except Exception as exc:
+        # Re-raise so Sentry records it once. The print is what Render logs
+        # retain; the database keeps the raw string and the API shortens it.
+        print(f"Ingest failed for {org_id}: {type(exc).__name__}: {str(exc)[:400]}")
         _finish("failed", error=str(exc))
         raise
 

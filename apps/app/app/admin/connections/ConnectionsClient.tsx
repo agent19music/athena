@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/Button";
+import { userFacingError } from "@/lib/userFacingError";
 import type { ConnectorState } from "./page";
 
 type Status = "connected" | "partial" | "disconnected" | "syncing" | "error" | "soon";
@@ -28,7 +29,9 @@ async function waitForJob(jobId: string): Promise<JobOutcome> {
       if (!res.ok) continue; // transient — keep polling until the deadline
       const job = await res.json();
       if (job.status === "completed") return { status: "completed", chunks: job.chunks };
-      if (job.status === "failed") return { status: "failed", error: job.error };
+      if (job.status === "failed") {
+        return { status: "failed", error: userFacingError(job.error, "The sync failed. Try again.") };
+      }
     } catch {
       /* network blip — keep polling */
     }
@@ -854,8 +857,17 @@ export default function ConnectionsClient({
           }}
           role="alert"
         >
-          <span style={{ flex: 1, minWidth: 0 }}>
-            Last sync failed: {latestJob.error}
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+            }}
+          >
+            {userFacingError(latestJob.error, "The last sync failed. Try again.")}
           </span>
           <button
             type="button"

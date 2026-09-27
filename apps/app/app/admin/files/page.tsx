@@ -1,11 +1,14 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UploadSimple, Plus, FolderSimplePlus, CaretRight, CaretDown } from "@phosphor-icons/react";
 import DashboardShell from "../../../components/DashboardShell";
 import PageFadeIn from "../../../components/PageFadeIn";
 import { Button } from "../../../components/Button";
 import UploadQueue, { type QueueItem } from "./UploadQueue";
+import { uploadFailureReason, uploadToBackend } from "../../../lib/uploadToBackend";
+import { userFacingError } from "../../../lib/userFacingError";
 
 const UPLOAD_CONCURRENCY = 3;
 const SETTLE_MS = 1400;
@@ -204,6 +207,7 @@ function GroupChildren({ groupKey }: { groupKey: string }) {
 }
 
 export default function FilesPage() {
+  const { getToken } = useAuth();
   const [files, setFiles] = useState<Row[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -309,39 +313,37 @@ export default function FilesPage() {
 
     let res: Response;
     try {
-      res = await fetch("/api/upload", { method: "POST", body: formData });
-    } catch {
-      // The request never made it to the server — nothing to retry against,
-      // the user just has to reselect the file.
-      updateItem(item.id, { status: "upload_failed", reason: "Couldn't reach the server" });
+      const token = await getToken();
+      res = await uploadToBackend(formData, token, item.file.size);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Couldn't reach the server";
+      updateItem(item.id, {
+        status: "upload_failed",
+        reason: reason === "Failed to fetch" ? "Couldn't reach the server" : reason,
+      });
       return;
     }
 
     const data = await res.json().catch(() => null);
 
     if (!res.ok) {
-      const detail = data?.detail;
-      const reason =
-        (typeof detail === "object" && detail?.message) ||
-        (typeof detail === "string" && detail) ||
-        data?.error ||
-        (res.status === 402
-          ? "Plan limit reached. Upgrade on Billing."
-          : "Processing failed");
-      updateItem(item.id, { status: "chunk_failed", reason });
+      updateItem(item.id, { status: "chunk_failed", reason: uploadFailureReason(res.status, data) });
       return;
     }
 
     const skipped = (data?.skipped ?? []).find((s: { name: string }) => s.name === item.name);
     if (skipped) {
-      updateItem(item.id, { status: "chunk_failed", reason: skipped.reason });
+      updateItem(item.id, {
+        status: "chunk_failed",
+        reason: userFacingError(skipped.reason, "Couldn't index this file."),
+      });
       return;
     }
 
     updateItem(item.id, { status: "done" });
     scheduleRefresh();
     scheduleRemoval(item.id);
-  }, [updateItem, scheduleRefresh, scheduleRemoval]);
+  }, [getToken, updateItem, scheduleRefresh, scheduleRemoval]);
 
   const runQueue = useCallback((items: QueueItem[]) => {
     let next = 0;
