@@ -5,7 +5,6 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { cn } from "@/lib/utils";
-import RebrandAlertBar from "../components/RebrandAlertBar";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -95,10 +94,7 @@ export default function RootLayout({
             dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
           />
         </head>
-        <body>
-          <RebrandAlertBar />
-          {children}
-        </body>
+        <body>{children}</body>
         <Analytics />
         <GoogleAnalytics gaId="G-NFHB1M7VJY" />
       </html>
