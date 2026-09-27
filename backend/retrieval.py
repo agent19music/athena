@@ -4,7 +4,7 @@ from sqlalchemy import text
 
 from database import session_for_org
 from embeddings import embed_query
-from form_insights import build_breakdown, match_form_question
+from form_insights import build_breakdown, build_form_overview, match_form_question, query_wants_overview
 from generation import condense_question, synthesize_answer, synthesize_form_answer
 
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.65"))
@@ -57,6 +57,34 @@ async def answer_query(
     # so retrieval finds the right chunk ("how much notice?" → "...for leave?").
     search_query = await condense_question(query, history)
     query_embedding = await embed_query(search_query)
+
+    # "Give me an overview" is about the survey, not whichever submission
+    # happens to embed nearest to those words. A Tally chunk is one person's
+    # entire form, so falling through to it dumps a raw response.
+    if query_wants_overview(search_query):
+        overview = build_form_overview(org_id)
+        if overview:
+            answer, degraded = await synthesize_form_answer(
+                query, "survey overview", overview["breakdown"], history
+            )
+            return {
+                "answer": answer,
+                "type": "document",
+                "source_title": f"{overview['form_name']} · overview",
+                "source_doc_id": None,
+                "source_type": "tally",
+                "source_excerpt": overview["breakdown"][:500],
+                "similarity_score": None,
+                "degraded": degraded,
+            }
+        return {
+            "answer": (
+                "I don't have grouped survey responses yet, so I can't give an overview. "
+                "Sync the form, then ask again."
+            ),
+            "type": "staff_fallback",
+            "similarity_score": None,
+        }
 
     # A query about a form question ("what's the most common X", "how do people
     # feel about Y") needs the population, not the one submission a plain
