@@ -67,7 +67,22 @@ async function finishOnboarding(body: Record<string, unknown>) {
   if (!res.ok) {
     throw new Error(data.error ?? "Something went wrong. Please try again.");
   }
-  return data as { isNew?: boolean; org_id?: string };
+  return data as { isNew?: boolean; org_id?: string; promoGranted?: boolean };
+}
+
+const PROMO_TOAST_KEY = "athena:promo-toast";
+
+function stashPromoToast(granted: boolean | undefined) {
+  if (!granted) return;
+  try {
+    sessionStorage.setItem(PROMO_TOAST_KEY, "1");
+  } catch {
+    // Private mode — the ?promo=1 query still carries the toast.
+  }
+}
+
+function billingHref(promoGranted: boolean | undefined) {
+  return promoGranted ? "/admin/billing?promo=1" : "/admin/billing?welcome=1";
 }
 
 export default function OnboardingPage() {
@@ -93,7 +108,7 @@ export default function OnboardingPage() {
 
     (async () => {
       try {
-        await finishOnboarding({
+        const data = await finishOnboarding({
           orgName: organization.name,
           logoUrl: null,
           notionApiKey: null,
@@ -102,7 +117,8 @@ export default function OnboardingPage() {
           tallyApiKey: null,
           tallyFormIds: [],
         });
-        router.replace("/admin/billing?welcome=1");
+        stashPromoToast(data.promoGranted);
+        router.replace(billingHref(data.promoGranted));
       } catch {
         // Fall through to a minimal org card if auto-skip fails.
         autoSkipStarted.current = false;
@@ -125,7 +141,7 @@ export default function OnboardingPage() {
   if (!isLoaded) return null;
   if (organization?.publicMetadata?.onboarded === true) return null;
 
-  // Existing org: show nothing while we auto-skip to the dashboard.
+  // Existing org: show nothing while we auto-skip to billing.
   if (organization) return null;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -144,11 +160,12 @@ export default function OnboardingPage() {
         tallyFormIds: [],
       });
 
+      stashPromoToast(data.promoGranted);
       if (data.isNew && data.org_id) {
         await setActive({ organization: data.org_id });
       }
 
-      router.push("/admin/billing?welcome=1");
+      router.push(billingHref(data.promoGranted));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect. Check your internet and try again.");
     } finally {
@@ -212,7 +229,7 @@ export default function OnboardingPage() {
               fontFamily: "var(--font-sans)",
             }}
           >
-            Name your workspace. Next you will start a 7-day free trial — then you can connect sources and upload files.
+            Name your workspace. You can connect sources and upload files once you are in.
           </p>
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>

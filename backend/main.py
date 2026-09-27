@@ -1431,6 +1431,12 @@ class RedeemRequest(BaseModel):
     code: str
 
 
+class GrantSignupPromoRequest(BaseModel):
+    org_id: str
+    clerk_user_id: str
+    code: str | None = None
+
+
 @app.get("/billing/entitlement")
 async def billing_entitlement(auth_ctx: AuthContext = Depends(require_read_auth)):
     from billing import usage_snapshot
@@ -1578,6 +1584,34 @@ async def billing_cancel(auth_ctx: AuthContext = Depends(require_auth)):
         db.commit()
 
     return {"status": "ok", "subscription": {"id": sub.get("id"), "status": sub.get("status")}}
+
+
+@app.post("/billing/grant-signup")
+async def billing_grant_signup(
+    body: GrantSignupPromoRequest,
+    _: None = Depends(require_backend_secret),
+):
+    """Grant the signup promo for a brand-new org.
+
+    Next.js calls this from POST /api/orgs with X-API-Key and the org id returned
+    by the Clerk Backend API. Do not redeem with the user's session JWT here:
+    createOrganization does not put org_id on the token until the browser
+    calls setActive, and the Clerk webhook can arrive before or after that.
+    """
+    from billing import grant_signup_promo
+    from database import get_session
+
+    if not body.org_id.strip() or not body.clerk_user_id.strip():
+        raise HTTPException(status_code=400, detail="org_id and clerk_user_id are required")
+
+    ensure_organization_exists(body.org_id)
+    with get_session() as db:
+        return grant_signup_promo(
+            db,
+            clerk_org_id=body.org_id,
+            clerk_user_id=body.clerk_user_id,
+            code=body.code,
+        )
 
 
 @app.post("/billing/redeem")

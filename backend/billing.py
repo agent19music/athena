@@ -598,3 +598,38 @@ def redeem_promo(
             detail="This organisation has already redeemed a promo code.",
         )
     return resolve_entitlement(session, clerk_org_id)
+
+
+def grant_signup_promo(
+    session: Session,
+    *,
+    clerk_org_id: str,
+    clerk_user_id: str,
+    code: str | None = None,
+) -> dict[str, Any]:
+    """Apply the signup promo once. Already-redeemed and already-paid orgs are a no-op.
+
+    Called with explicit Clerk ids from onboarding (server-to-server). The browser
+    session JWT often has no org_id until setActive finishes, so this must not
+    depend on require_auth.
+    """
+    promo_code = (code or os.getenv("SIGNUP_PROMO_CODE", "ATHENA-EARLY")).strip()
+    try:
+        ent = redeem_promo(
+            session,
+            clerk_org_id=clerk_org_id,
+            clerk_user_id=clerk_user_id,
+            code=promo_code,
+        )
+    except HTTPException as exc:
+        if exc.status_code in (400, 404):
+            detail = exc.detail if isinstance(exc.detail, str) else "Could not apply promo code."
+            return {"granted": False, "reason": detail}
+        raise
+    period_end = ent.current_period_end.isoformat() if ent.current_period_end else None
+    return {
+        "granted": True,
+        "plan": ent.plan,
+        "source": ent.source,
+        "period_end": period_end,
+    }
