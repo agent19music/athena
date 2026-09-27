@@ -71,8 +71,36 @@ export async function POST(request: NextRequest) {
     ...(backendApiSecret ? { "X-API-Key": backendApiSecret } : {}),
   };
 
+  // Promo is granted here, not from the browser and not from the Clerk webhook.
+  // createOrganization does not put org_id on the session JWT until setActive,
+  // so /billing/redeem (which reads the token) 401s in that window. The webhook
+  // is async and also fires for orgs that are not a fresh signup.
+  async function grantSignupPromo(): Promise<boolean> {
+    try {
+      const res = await fetch(`${BACKEND_URL}/billing/grant-signup`, {
+        method: "POST",
+        headers: backendHeaders,
+        body: JSON.stringify({ org_id: orgId, clerk_user_id: userId }),
+      });
+      if (!res.ok) {
+        console.error(`Signup promo failed for org ${orgId}:`, await res.text());
+        return false;
+      }
+      const data = await res.json().catch(() => ({}));
+      return data.granted === true;
+    } catch (err) {
+      console.error("Could not grant signup promo:", err);
+      return false;
+    }
+  }
+
+  let promoGranted = false;
+
   try {
     if (hasSources) {
+      // Grant before ingest so the plan gate sees Pro. The grant endpoint
+      // creates the organizations row if the webhook has not arrived yet.
+      promoGranted = await grantSignupPromo();
       const res = await fetch(`${BACKEND_URL}/ingest`, {
         method: "POST",
         headers: backendHeaders,
@@ -104,6 +132,7 @@ export async function POST(request: NextRequest) {
       if (!res.ok) {
         console.error(`Ensure org failed for ${orgId}:`, await res.text());
       }
+      promoGranted = await grantSignupPromo();
     }
   } catch (err) {
     console.error("Could not reach backend during onboarding:", err);
@@ -119,5 +148,5 @@ export async function POST(request: NextRequest) {
     // Non-fatal — user can still proceed, they'll hit onboarding again on next load
   }
 
-  return NextResponse.json({ org_id: orgId, name, isNew });
+  return NextResponse.json({ org_id: orgId, name, isNew, promoGranted });
 }

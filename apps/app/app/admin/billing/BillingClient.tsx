@@ -6,6 +6,7 @@ import { initializePaddle, type Paddle } from "@paddle/paddle-js";
 import { Button } from "../../../components/Button";
 import DashboardShell from "../../../components/DashboardShell";
 import PageFadeIn from "../../../components/PageFadeIn";
+import { Toast } from "../../../components/Toast";
 import {
   isPaidEntitlement,
   normalizePlan,
@@ -143,8 +144,31 @@ export default function BillingClient({
   const router = useRouter();
   const [entitlement, setEntitlement] = useState(initial);
   const [welcomeTrial, setWelcomeTrial] = useState(false);
+  const [gifted, setGifted] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get("promo") === "1";
+    let fromStore = false;
+    try {
+      fromStore = sessionStorage.getItem("athena:promo-toast") === "1";
+      if (fromStore) sessionStorage.removeItem("athena:promo-toast");
+    } catch {
+      fromStore = false;
+    }
+    if (fromQuery || fromStore) {
+      setGifted(true);
+      setToast("This one is on us");
+    }
+    if (fromQuery) {
+      params.delete("promo");
+      const next = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        next ? `${window.location.pathname}?${next}` : window.location.pathname,
+      );
+    }
     if (params.get("welcome") === "1" || params.get("trial") === "1") {
       setWelcomeTrial(true);
     }
@@ -517,7 +541,7 @@ export default function BillingClient({
             </h1>
           </div>
 
-          {(welcomeTrial || !isPaid) && (
+          {(welcomeTrial || !isPaid) && !gifted && (
             <div
               className="notice notice-warning"
               style={{ marginBottom: 20 }}
@@ -747,6 +771,7 @@ export default function BillingClient({
           </div>
         </PageFadeIn>
       </main>
+      <Toast message={toast} onDismiss={() => setToast(null)} />
     </DashboardShell>
   );
 }
