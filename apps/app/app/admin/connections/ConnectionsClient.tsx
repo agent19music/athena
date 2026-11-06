@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/Button";
 import { userFacingError } from "@/lib/userFacingError";
 import type { ConnectorState } from "./page";
@@ -571,32 +571,153 @@ function NotifyButton({ integration, initiallyNotified }: { integration: string;
   );
 }
 
-// Opens the connector's setup modal. Styled to match the plain action links it
-// replaced, so the row layout stays a single button per connector. Once a
-// connector already has credentials, re-opening this modal replaces them —
-// destructive styling plus a tooltip make that consequence visible before the
-// click, instead of only inside the modal's warning copy.
 function ConfigureButton({
   label,
-  destructive,
-  tooltip,
   onClick,
 }: {
   label: string;
-  destructive?: boolean;
-  tooltip?: string;
   onClick: () => void;
 }) {
   return (
-    <Button
-      onClick={onClick}
-      variant={destructive ? "destructive" : "primary-dark"}
-      size="sm"
-      className={tooltip ? "tooltip tooltip-end" : undefined}
-      data-tooltip={tooltip}
-    >
+    <Button onClick={onClick} variant="primary-dark" size="sm">
       {label}
     </Button>
+  );
+}
+
+type OverflowAction =
+  | { kind: "link"; label: string; href: string }
+  | { kind: "configure"; label: string };
+
+function overflowActions(conn: Connection): OverflowAction[] {
+  const actions: OverflowAction[] = [];
+  if (conn.oauthHref) {
+    actions.push({ kind: "link", label: conn.oauthLabel ?? "Connect", href: conn.oauthHref });
+  }
+  if (conn.actionHref) {
+    actions.push({ kind: "link", label: conn.actionLabel, href: conn.actionHref });
+  } else if (CONNECTOR_FIELDS[conn.id]) {
+    actions.push({ kind: "configure", label: conn.actionLabel });
+  }
+  return actions;
+}
+
+function EllipsisIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <circle cx="3.25" cy="8" r="1.15" />
+      <circle cx="8" cy="8" r="1.15" />
+      <circle cx="12.75" cy="8" r="1.15" />
+    </svg>
+  );
+}
+
+// Secondary actions on a connection that already syncs. Sync now stays on the
+// row; the rest sit in this tray.
+function ConnectionOverflow({
+  actions,
+  onConfigure,
+}: {
+  actions: OverflowAction[];
+  onConfigure: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const open = (hover || pinned) && !dismissed;
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setPinned(false);
+        setDismissed(true);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPinned(false);
+        setDismissed(true);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (actions.length === 0) return null;
+
+  return (
+    <div
+      ref={rootRef}
+      className="conn-overflow"
+      onMouseEnter={() => {
+        setHover(true);
+        setDismissed(false);
+      }}
+      onMouseLeave={() => setHover(false)}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="conn-overflow-trigger"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          if (open) {
+            setPinned(false);
+            setDismissed(true);
+          } else {
+            setPinned(true);
+            setDismissed(false);
+          }
+        }}
+      >
+        <EllipsisIcon />
+      </Button>
+      <div
+        className="conn-overflow-tray"
+        data-open={open ? "true" : "false"}
+        role="menu"
+        aria-hidden={!open}
+        inert={!open}
+      >
+        <div className="conn-overflow-panel">
+          {actions.map((action) =>
+            action.kind === "link" ? (
+              <a
+                key={action.label}
+                href={action.href}
+                role="menuitem"
+                className="conn-overflow-item"
+              >
+                {action.label}
+              </a>
+            ) : (
+              <button
+                key={action.label}
+                type="button"
+                role="menuitem"
+                className="conn-overflow-item"
+                onClick={() => {
+                  setPinned(false);
+                  setHover(false);
+                  onConfigure();
+                }}
+              >
+                {action.label}
+              </button>
+            ),
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1002,39 +1123,36 @@ export default function ConnectionsClient({
                     <span className="spinner" />
                     Syncing…
                   </span>
+                ) : conn.status === "soon" ? (
+                  <NotifyButton
+                    integration={conn.id}
+                    initiallyNotified={notifiedIntegrations.includes(conn.id)}
+                  />
+                ) : conn.syncable ? (
+                  <>
+                    <SyncButton />
+                    <ConnectionOverflow
+                      actions={overflowActions(conn)}
+                      onConfigure={() => setConfiguring(conn.id)}
+                    />
+                  </>
                 ) : (
                   <>
-                    {conn.syncable && <SyncButton />}
-                    {conn.status === "soon" ? (
-                      <NotifyButton
-                        integration={conn.id}
-                        initiallyNotified={notifiedIntegrations.includes(conn.id)}
-                      />
-                    ) : (
-                      <>
-                        {conn.oauthHref && (
-                          <Button href={conn.oauthHref} variant="accent-solid" size="sm">
-                            {conn.oauthLabel ?? "Connect"}
-                          </Button>
-                        )}
-                        {conn.actionHref ? (
-                          <Button href={conn.actionHref} variant="secondary" size="sm">
-                            {conn.actionLabel}
-                          </Button>
-                        ) : CONNECTOR_FIELDS[conn.id] ? (
-                          <ConfigureButton
-                            label={conn.actionLabel}
-                            destructive={conn.syncable}
-                            tooltip={
-                              conn.syncable
-                                ? "Replaces the current setup and re-indexes"
-                                : undefined
-                            }
-                            onClick={() => setConfiguring(conn.id)}
-                          />
-                        ) : null}
-                      </>
+                    {conn.oauthHref && (
+                      <Button href={conn.oauthHref} variant="accent-solid" size="sm">
+                        {conn.oauthLabel ?? "Connect"}
+                      </Button>
                     )}
+                    {conn.actionHref ? (
+                      <Button href={conn.actionHref} variant="secondary" size="sm">
+                        {conn.actionLabel}
+                      </Button>
+                    ) : CONNECTOR_FIELDS[conn.id] ? (
+                      <ConfigureButton
+                        label={conn.actionLabel}
+                        onClick={() => setConfiguring(conn.id)}
+                      />
+                    ) : null}
                   </>
                 )}
               </div>

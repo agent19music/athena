@@ -5,8 +5,10 @@ services:
       POSTGRES_DB: kuzana_brain
       POSTGRES_USER: kuzana
       POSTGRES_PASSWORD: kuzana
+    # Host Postgres already binds 127.0.0.1:5432 on this machine; publish
+    # elsewhere so compose can attach the db container to the project network.
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
