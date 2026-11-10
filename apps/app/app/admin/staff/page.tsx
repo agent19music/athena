@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import StaffClient from "./StaffClient";
-import DashboardShell from "../../../components/DashboardShell";
-import PageFadeIn from "../../../components/PageFadeIn";
+import DashboardShell, { AppPage } from "../../../components/DashboardShell";
+import { PageHeader } from "../../../components/athena/ui";
 import { loadStaff } from "@/lib/staff";
 
 export default async function StaffPage() {
@@ -16,18 +16,18 @@ export default async function StaffPage() {
 
   return (
     <DashboardShell>
-      <main style={{ flex: 1, overflowY: "auto", background: "#FAFAFA" }}>
-        <PageFadeIn style={{ maxWidth: 880, margin: "0 auto", padding: "56px 48px 80px" }}>
-            <h1 style={{ fontSize: 32, fontWeight: 400, letterSpacing: "-0.025em", color: "#111", lineHeight: 1.2, marginBottom: 48 }}>
-            Team
-          </h1>
-          <StaffClient
-            members={members}
-            pendingInvitations={pendingInvitations}
-            currentUserEmails={currentUserEmails}
-          />
-        </PageFadeIn>
-      </main>
+      <AppPage>
+        <PageHeader
+          title="Team"
+          sub="Invite people and manage who can use Athena in your organisation."
+          subMobile="Invite people and manage who can use Athena."
+        />
+        <StaffClient
+          members={members}
+          pendingInvitations={pendingInvitations}
+          currentUserEmails={currentUserEmails}
+        />
+      </AppPage>
     </DashboardShell>
   );
 }

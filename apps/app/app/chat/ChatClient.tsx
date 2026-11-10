@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
-import { ClockCounterClockwise, Plus } from "@phosphor-icons/react";
+import { ArrowRight, ChatTeardropText, ClockCounterClockwise, Plus, Trash, X } from "@phosphor-icons/react";
 import DocumentCard from "../../components/chat/DocumentCard";
 import StaffCard from "../../components/chat/StaffCard";
 import DashboardShell from "../../components/DashboardShell";
-import PageFadeIn from "../../components/PageFadeIn";
-import { Button } from "../../components/Button";
+import { ConfirmDialog } from "../../components/athena/ConfirmDialog";
 import { Toast } from "../../components/Toast";
 
 
@@ -57,7 +56,7 @@ function ThinkingIndicator() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
       <ThinkingOrb state={state} size={20} speed={0.9} />
-      <span style={{ fontSize: 14, fontWeight: 400, color: "var(--foreground-muted)" }}>
+      <span style={{ fontSize: 14, color: "var(--a-muted)" }}>
         {label}…
       </span>
     </div>
@@ -97,7 +96,15 @@ function fromStored(m: StoredMessage): Message {
   };
 }
 
-export default function ChatClient({ suggestions = [] }: { suggestions?: string[] }) {
+export default function ChatClient({
+  suggestions = [],
+  sourceCount = null,
+  initialQuery = null,
+}: {
+  suggestions?: string[];
+  sourceCount?: number | null;
+  initialQuery?: string | null;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -106,8 +113,11 @@ export default function ChatClient({ suggestions = [] }: { suggestions?: string[
   const [loadingThread, setLoadingThread] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const initialSent = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -155,14 +165,21 @@ export default function ChatClient({ suggestions = [] }: { suggestions?: string[
     }
   }
 
-  async function deleteConversation(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (id === activeId) newChat();
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const id = pendingDelete.id;
+    setDeleting(true);
     try {
-      await fetch(`${API_URL}/conversations/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API_URL}/conversations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (id === activeId) newChat();
     } catch {
+      setToast("Couldn't delete that conversation. Try again.");
       refreshConversations();
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
     }
   }
 
@@ -208,14 +225,18 @@ export default function ChatClient({ suggestions = [] }: { suggestions?: string[
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      submit(input);
+  // Questions asked from the Overview "Ask Athena" card arrive as ?q=
+  useEffect(() => {
+    if (initialQuery && !initialSent.current) {
+      initialSent.current = true;
+      submit(initialQuery);
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery]);
 
-  const isEmpty = messages.length === 0 && !loadingThread;
+  const isEmpty = messages.length === 0 && !loadingThread && !loading;
+  const active = conversations.find((c) => c.id === activeId) ?? null;
+  const title = active?.title ?? (activeId ? (messages.find((m) => m.role === "user") as { text?: string } | undefined)?.text ?? "Conversation" : "New chat");
 
   // Group conversations for the sidebar (list is already newest-first).
   const grouped = new Map<string, ConversationSummary[]>();
@@ -227,125 +248,49 @@ export default function ChatClient({ suggestions = [] }: { suggestions?: string[
 
   return (
     <DashboardShell>
-      <style>{`
-        .convo-rail { width: 260px; min-width: 260px; }
-        .convo-item .convo-del { opacity: 0; }
-        .convo-item:hover .convo-del { opacity: 1; }
-        .chat-mobile-bar { display: none; }
-
-        @media (max-width: 900px) {
-          .convo-rail {
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: 65;
-            height: 100%;
-            width: 280px;
-            min-width: 0;
-            box-shadow: none;
-            transform: translateX(-100%);
-            transition: transform 240ms cubic-bezier(0.2, 0, 0, 1);
-          }
-          .convo-rail[data-open="true"] {
-            transform: translateX(0);
-            box-shadow: 8px 0 32px rgba(0,0,0,0.12);
-          }
-          .chat-mobile-bar { display: flex; }
-        }
-      `}</style>
-
-      <PageFadeIn style={{ display: "flex", flex: 1, overflow: "hidden", background: "var(--background)" }}>
-        {/* Mobile backdrop for the conversation drawer */}
-        {mobileHistoryOpen && (
-          <div
-            onClick={() => setMobileHistoryOpen(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.28)", zIndex: 64, backdropFilter: "blur(1px)" }}
-          />
-        )}
-
-        {/* Conversations sidebar */}
-        <aside
-          className="convo-rail"
-          data-open={mobileHistoryOpen}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            borderRight: "1px solid var(--border)",
-            background: "var(--surface)",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ padding: "var(--space-4)", flexShrink: 0 }}>
-            <Button onClick={newChat} variant="primary-dark" size="lg" full style={{ width: "100%" }}>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New chat
-            </Button>
+      <div className="a-chat">
+        <aside className={`a-convos${mobileHistoryOpen ? " open" : ""}`} aria-label="Conversations">
+          <div className="a-convos-head" style={{ gap: 8 }}>
+            <button type="button" className="a-btn a-btn-primary" style={{ flex: 1 }} onClick={newChat}>
+              <Plus size={14} />
+              New chat
+            </button>
+            {mobileHistoryOpen && (
+              <button type="button" className="a-icon-btn" aria-label="Close history" onClick={() => setMobileHistoryOpen(false)}>
+                <X size={16} />
+              </button>
+            )}
           </div>
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "0 var(--space-3) var(--space-4)" }}>
+          <div className="a-convos-list">
             {conversations.length === 0 && (
-              <p style={{ fontSize: 13, color: "var(--foreground-subtle)", padding: "var(--space-3)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 13, color: "var(--a-muted)", padding: "6px 10px", lineHeight: 1.5 }}>
                 Your conversations will appear here.
               </p>
             )}
             {GROUP_ORDER.filter((g) => grouped.has(g)).map((g) => (
-              <div key={g} style={{ marginBottom: "var(--space-4)" }}>
-                <p
-                  style={{
-                    fontSize: 11,
-                    color: "var(--foreground-subtle)",
-                    padding: "0 var(--space-3)",
-                    marginBottom: 6,
-                    letterSpacing: "0.01em",
-                  }}
-                >
-                  {g}
-                </p>
+              <div key={g} style={{ marginBottom: 18 }}>
+                <div className="a-group" style={{ margin: "6px 0" }}>{g}</div>
                 {grouped.get(g)!.map((c) => {
-                  const active = c.id === activeId;
+                  const isActive = c.id === activeId;
                   return (
                     <div
                       key={c.id}
-                      className="convo-item"
+                      className="a-convo"
+                      aria-current={isActive}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => openConversation(c.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "8px var(--space-3)",
-                        borderRadius: "var(--radius-md)",
-                        cursor: "pointer",
-                        background: active ? "var(--hover-surface)" : "transparent",
-                        transition: "background 150ms ease-out",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!active) (e.currentTarget as HTMLDivElement).style.background = "var(--hover-surface)";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!active) (e.currentTarget as HTMLDivElement).style.background = "transparent";
-                      }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openConversation(c.id); } }}
                     >
-                      <span
-                        style={{
-                          flex: 1,
-                          fontSize: 13,
-                          color: active ? "var(--foreground)" : "var(--foreground-muted)",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {c.title}
-                      </span>
-                      <Button
-                        className="convo-del"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={(e) => deleteConversation(c.id, e)}
+                      <span className="t">{c.title}</span>
+                      <button
+                        type="button"
+                        className="a-icon-btn sm bare"
                         aria-label="Delete conversation"
-                        style={{ flexShrink: 0 }}
+                        onClick={(e) => { e.stopPropagation(); setPendingDelete(c); }}
                       >
-                        ×
-                      </Button>
+                        <Trash size={14} color="var(--a-danger)" />
+                      </button>
                     </div>
                   );
                 })}
@@ -354,136 +299,70 @@ export default function ChatClient({ suggestions = [] }: { suggestions?: string[
           </div>
         </aside>
 
-        {/* Chat column */}
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", minWidth: 0 }}>
-          {/* Mobile-only bar: conversation history + new chat, since the sidebar is a drawer below 900px */}
-          <div
-            className="chat-mobile-bar"
-            style={{
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 16px",
-              borderBottom: "1px solid var(--border)",
-              flexShrink: 0,
-            }}
-          >
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setMobileHistoryOpen(true)}
-              aria-label="Conversation history"
-            >
-              <ClockCounterClockwise size={18} />
-            </Button>
-            <Button variant="ghost" size="icon-sm" onClick={newChat} aria-label="New chat">
-              <Plus size={18} />
-            </Button>
+        <section className="a-thread">
+          <div className="a-thread-head">
+            <span className="a-ellipsis" style={{ fontSize: 14, minWidth: 0 }}>{title}</span>
+            {active ? (
+              <span style={{ fontSize: 12, color: "var(--a-muted)", flexShrink: 0 }}>{groupLabel(active.updated_at)}</span>
+            ) : !activeId && typeof sourceCount === "number" && sourceCount > 0 ? (
+              <span className="a-badge">{sourceCount} source{sourceCount === 1 ? "" : "s"} connected</span>
+            ) : null}
+            <span style={{ flex: 1 }} />
+            {active && (
+              <button type="button" className="a-btn a-btn-danger-quiet a-btn-sm" onClick={() => setPendingDelete(active)}>
+                <Trash size={14} />
+                Delete
+              </button>
+            )}
           </div>
 
-          {/* Messages */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "var(--space-8) var(--space-6)" }}>
-            <div style={{ maxWidth: 720, margin: "0 auto" }}>
-              {/* Empty state */}
-              {isEmpty && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    minHeight: "calc(100svh - 200px)",
-                    textAlign: "center",
-                    gap: "var(--space-8)",
-                  }}
-                >
-                  <div>
-                    <h1
-                      style={{
-                        fontSize: "clamp(28px, 4vw, 40px)",
-                        fontWeight: 400,
-                        letterSpacing: "-0.025em",
-                        lineHeight: 1.15,
-                        color: "var(--foreground)",
-                        marginBottom: "var(--space-3)",
-                      }}
-                    >
-                      What do you need to know?
-                    </h1>
-                    <p style={{ fontSize: 16, color: "var(--foreground-muted)", lineHeight: 1.6 }}>
-                      {suggestions.length > 0
-                        ? "These questions come from your connected docs and uploads."
-                        : "Ask anything about how the team works."}
-                    </p>
-                  </div>
+          <div className="a-thread-m-head">
+            <button type="button" className="a-icon-btn sm bare" aria-label="Conversation history" onClick={() => setMobileHistoryOpen(true)}>
+              <ClockCounterClockwise size={18} color="var(--a-ink)" />
+            </button>
+            <span className="a-ellipsis" style={{ flex: 1, fontSize: 14 }}>{title}</span>
+            {active && (
+              <button type="button" className="a-icon-btn sm bare" aria-label="Delete conversation" onClick={() => setPendingDelete(active)}>
+                <Trash size={16} color="var(--a-danger)" />
+              </button>
+            )}
+            <button type="button" className="a-icon-btn sm bare" aria-label="New chat" onClick={newChat}>
+              <Plus size={18} color="var(--a-ink)" />
+            </button>
+          </div>
 
-                  {suggestions.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "var(--space-3)",
-                      alignItems: "stretch",
-                      width: "100%",
-                      maxWidth: 640,
-                    }}
-                  >
+          <div className={`a-thread-body${isEmpty ? " empty" : ""}`}>
+            {isEmpty ? (
+              <div className="a-chat-empty">
+                <div>
+                  <div className="a-kicker" style={{ marginBottom: 12 }}>Ask Athena</div>
+                  <h1 className="a-serif">What do you need to know?</h1>
+                  <p>
+                    {suggestions.length > 0
+                      ? "These questions come from your connected docs and uploads."
+                      : "Ask anything about how the team works."}
+                  </p>
+                </div>
+                {suggestions.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
                     {suggestions.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => submit(s)}
-                        className="btn btn-secondary"
-                        style={{
-                          width: "100%",
-                          whiteSpace: "normal",
-                          textAlign: "left",
-                          lineHeight: 1.45,
-                          height: "auto",
-                          minHeight: 40,
-                          padding: "10px 16px",
-                          borderRadius: 9999,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {s}
+                      <button key={s} type="button" className="a-suggest" onClick={() => submit(s)}>
+                        <ChatTeardropText size={16} color="var(--a-muted)" style={{ flexShrink: 0 }} />
+                        <span>{s}</span>
                       </button>
                     ))}
                   </div>
-                  )}
-                </div>
-              )}
-
-              {/* Message thread */}
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    marginBottom: "var(--space-6)",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: msg.role === "user" ? "flex-end" : "flex-start",
-                  }}
-                >
-                  {msg.role === "user" ? (
-                    <div
-                      style={{
-                        background: "var(--foreground)",
-                        color: "var(--background)",
-                        borderRadius: "18px 18px 4px 18px",
-                        padding: "12px 18px",
-                        fontSize: 15,
-                        fontWeight: 400,
-                        lineHeight: 1.55,
-                        maxWidth: "80%",
-                      }}
-                    >
-                      {msg.text}
+                )}
+              </div>
+            ) : (
+              <div className="a-thread-inner">
+                {messages.map((msg) =>
+                  msg.role === "user" ? (
+                    <div key={msg.id} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+                      <div className="a-bubble">{msg.text}</div>
                     </div>
                   ) : (
-                    <div style={{ width: "100%" }}>
+                    <div key={msg.id} style={{ marginBottom: 28 }}>
                       {msg.data.type === "document" ? (
                         <DocumentCard
                           answer={msg.data.answer}
@@ -504,92 +383,55 @@ export default function ChatClient({ suggestions = [] }: { suggestions?: string[
                         />
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
-
-              {/* Loading */}
-              {loading && (
-                <div style={{ marginBottom: "var(--space-6)" }}>
-                  <ThinkingIndicator />
-                </div>
-              )}
-
-              <div ref={bottomRef} />
-            </div>
+                  ),
+                )}
+                {(loading || loadingThread) && (
+                  <div style={{ marginBottom: 24 }}>
+                    <ThinkingIndicator />
+                  </div>
+                )}
+                <div ref={bottomRef} />
+              </div>
+            )}
           </div>
 
-          {/* Input bar */}
-          <div
-            style={{
-              flexShrink: 0,
-              padding: "var(--space-4) var(--space-6) var(--space-6)",
-              background: "var(--surface)",
-              borderTop: "1px solid var(--border)",
-            }}
-          >
-            <div
-              style={{
-                maxWidth: 720,
-                margin: "0 auto",
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-3)",
-                background: "var(--card)",
-                border: "1px solid var(--border-strong)",
-                borderRadius: 9999,
-                padding: "6px 6px 6px 20px",
-              }}
+          <div className="a-composer-bar">
+            <form
+              className="a-input a-composer"
+              style={{ maxWidth: 720, margin: "0 auto" }}
+              onSubmit={(e) => { e.preventDefault(); submit(input); }}
             >
               <input
                 ref={inputRef}
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  activeId && messages.length > 0
-                    ? "Ask a follow-up…"
-                    : "Ask anything about how we work…"
-                }
+                placeholder={activeId && messages.length > 0 ? "Ask a follow-up" : "Ask anything about how we work"}
                 disabled={loading}
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  fontSize: 15,
-                  fontWeight: 400,
-                  color: "var(--foreground)",
-                  fontFamily: "var(--font-sans)",
-                  lineHeight: 1.5,
-                }}
+                aria-label="Ask Athena"
               />
-              <Button
-                onClick={() => submit(input)}
-                disabled={!input.trim() || loading}
-                variant="primary-dark"
-                size="lg"
-                full
-                style={{ flexShrink: 0 }}
-              >
+              <button type="submit" className="a-btn a-btn-primary" disabled={!input.trim() || loading}>
                 Ask
-              </Button>
-            </div>
-            <p
-              style={{
-                textAlign: "center",
-                fontSize: 12,
-                color: "var(--foreground-subtle)",
-                marginTop: "var(--space-3)",
-              }}
-            >
+                <ArrowRight size={14} />
+              </button>
+            </form>
+            <p style={{ textAlign: "center", fontSize: 12, color: "var(--a-muted)", marginTop: 10 }}>
               Athena may be wrong. Always verify important information.
             </p>
           </div>
-        </div>
-      </PageFadeIn>
+        </section>
+      </div>
 
+      <ConfirmDialog
+        open={!!pendingDelete}
+        icon={<Trash size={18} />}
+        title="Delete this conversation?"
+        body={`"${pendingDelete?.title ?? "This conversation"}" and its answers will be removed from your history. This can't be undone.`}
+        confirmLabel="Delete"
+        busy={deleting}
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+      />
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </DashboardShell>
   );

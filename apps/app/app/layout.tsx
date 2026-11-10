@@ -1,12 +1,14 @@
 import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import "./athena-ui.css";
 import { cn } from "@/lib/utils";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 const siteUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.athena.uzskicorp.agency";
 const title = "Athena — Know instantly.";
@@ -67,7 +69,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={cn("font-sans", geist.variable)} data-theme="light" style={{ colorScheme: "light" }}>
+      <html lang="en" className={cn("font-sans", geist.variable, geistMono.variable)} data-theme="light" style={{ colorScheme: "light" }}>
         <body>{children}</body>
         <Analytics />
         <GoogleAnalytics gaId="G-NFHB1M7VJY" />

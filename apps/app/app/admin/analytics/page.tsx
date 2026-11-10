@@ -1,8 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { CaretDown } from "@phosphor-icons/react/dist/ssr";
 import AnalyticsClient from "./AnalyticsClient";
-import DashboardShell from "../../../components/DashboardShell";
-import PageFadeIn from "../../../components/PageFadeIn";
+import DashboardShell, { AppPage } from "../../../components/DashboardShell";
+import { PageHeader } from "../../../components/athena/ui";
 
 export default async function AnalyticsPage() {
   const { userId, orgId, orgRole } = await auth();
@@ -13,17 +14,22 @@ export default async function AnalyticsPage() {
 
   return (
     <DashboardShell>
-      <main style={{ flex: 1, overflowY: "auto", background: "#FAFAFA" }}>
-        <PageFadeIn style={{ maxWidth: 880, margin: "0 auto", padding: "56px 48px 80px" }}>
-          <h1 style={{ fontSize: 32, fontWeight: 400, letterSpacing: "-0.025em", color: "#111", lineHeight: 1.2, marginBottom: 8 }}>
-            Analytics
-          </h1>
-          <p style={{ fontSize: 15, color: "#6b6b6b", lineHeight: 1.6, marginBottom: 40 }}>
-            What your team is asking. Aggregate only — individual conversations stay private.
-          </p>
-          <AnalyticsClient />
-        </PageFadeIn>
-      </main>
+      <AppPage>
+        <PageHeader
+          title="Analytics"
+          sub="What your team is asking. Only totals are shown here, so individual conversations stay private."
+          subMobile="What your team is asking. Only totals are shown, so individual conversations stay private."
+          hideActionsOnMobile
+          actions={
+            // The analytics API returns a fixed 14-day window, so the range is shown, not chosen.
+            <span className="a-btn a-btn-secondary" aria-label="Range: last 14 days" style={{ cursor: "default" }}>
+              Range · Last 14 days
+              <CaretDown size={12} />
+            </span>
+          }
+        />
+        <AnalyticsClient />
+      </AppPage>
     </DashboardShell>
   );
 }

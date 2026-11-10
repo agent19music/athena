@@ -1,25 +1,28 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import DashboardShell from "../../components/DashboardShell";
-import PageFadeIn from "../../components/PageFadeIn";
+import { Plugs } from "@phosphor-icons/react/dist/ssr";
+import DashboardShell, { AppPage } from "../../components/DashboardShell";
+import { BtnLink, Tile } from "../../components/athena/ui";
 import ChatClient from "./ChatClient";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
 
-export default async function ChatPage() {
+export default async function ChatPage({ searchParams }: { searchParams: Promise<{ q?: string | string[] }> }) {
   const { userId, orgId, orgRole, getToken } = await auth();
 
   if (!userId) redirect("/login");
   if (!orgId) redirect("/onboarding");
 
   const isAdmin = orgRole === "org:admin";
+  const sp = await searchParams;
+  const initialQuery = typeof sp.q === "string" && sp.q.trim() ? sp.q.trim().slice(0, 2000) : null;
 
   // Gate chat behind having at least one ingested source — otherwise every
   // query is guaranteed to be a "no documentation found" miss. Fails open
   // (chunkCount stays null) on any fetch error so a flaky backend blocks
   // nobody; only a confirmed zero hides the chat UI.
   let chunkCount: number | null = null;
+  let sourceCount: number | null = null;
   let suggestions: string[] = [];
   try {
     const token = await getToken();
@@ -29,7 +32,11 @@ export default async function ChatPage() {
         headers,
         cache: "no-store",
       });
-      if (statsRes.ok) chunkCount = (await statsRes.json()).chunk_count ?? null;
+      if (statsRes.ok) {
+        const stats = await statsRes.json();
+        chunkCount = stats.chunk_count ?? null;
+        sourceCount = Array.isArray(stats.source_types) ? stats.source_types.length : null;
+      }
       if (chunkCount !== 0) {
         const suggestRes = await fetch(`${BACKEND_URL}/suggested-questions`, {
           headers,
@@ -48,59 +55,27 @@ export default async function ChatPage() {
   if (chunkCount === 0) {
     return (
       <DashboardShell>
-        <main
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            textAlign: "center",
-            padding: "0 24px",
-            background: "#FAFAFA",
-          }}
-        >
-        <PageFadeIn style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <h1
-            style={{
-              fontSize: 24,
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "#111",
-              marginBottom: 10,
-            }}
-          >
-            No knowledge sources connected yet
-          </h1>
-          <p style={{ fontSize: 14.5, color: "#888", lineHeight: 1.6, maxWidth: 420, marginBottom: 28 }}>
-            {isAdmin
-              ? "Chat needs something to search. Connect Notion, a Google Doc, or upload a file first, then come back here."
-              : "Chat needs something to search. Ask an admin on your team to connect a data source first."}
-          </p>
-          {isAdmin && (
-            <Link
-              href="/admin/connections"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                height: 44,
-                padding: "0 24px",
-                borderRadius: 9999,
-                background: "#171717",
-                color: "#fff",
-                fontSize: 14.5,
-                fontWeight: 400,
-                textDecoration: "none",
-              }}
-            >
-              Connect a source
-            </Link>
-          )}
-        </PageFadeIn>
-        </main>
+        <AppPage narrow>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "72px 0", gap: 16 }}>
+            <Tile lg><Plugs size={18} /></Tile>
+            <div>
+              <h1 className="a-serif" style={{ fontSize: 28, lineHeight: 1.2, letterSpacing: "-0.02em" }}>No knowledge sources connected yet</h1>
+              <p style={{ fontSize: 15, color: "var(--a-muted)", lineHeight: 1.55, maxWidth: 440, margin: "10px auto 0" }}>
+                {isAdmin
+                  ? "Chat needs something to search. Connect Notion, a Google Doc, or upload a file first, then come back here."
+                  : "Chat needs something to search. Ask an admin on your team to connect a data source first."}
+              </p>
+            </div>
+            {isAdmin && (
+              <BtnLink href="/admin/connections" variant="primary" size="lg" style={{ marginTop: 8 }}>
+                Connect a source
+              </BtnLink>
+            )}
+          </div>
+        </AppPage>
       </DashboardShell>
     );
   }
 
-  return <ChatClient suggestions={suggestions} />;
+  return <ChatClient suggestions={suggestions} sourceCount={sourceCount} initialQuery={initialQuery} />;
 }

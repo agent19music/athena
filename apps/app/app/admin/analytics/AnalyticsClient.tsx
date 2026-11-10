@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ChatTeardropText, CheckCircle, ClockCounterClockwise, Users } from "@phosphor-icons/react";
+import { StatCard } from "@/components/athena/ui";
+import { useWorkspaceSummary } from "@/components/athena/useWorkspaceSummary";
 
 type Analytics = {
   total_questions: number;
@@ -10,62 +13,54 @@ type Analytics = {
   top_questions: { question: string; count: number }[];
 };
 
-function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 160,
-        background: "#fff",
-        border: "1px solid #EBEBEB",
-        borderRadius: 12,
-        padding: "20px 22px",
-      }}
-    >
-      <p style={{ fontSize: 13, color: "#6b6b6b", margin: 0 }}>{label}</p>
-      <p style={{ fontSize: 30, fontWeight: 400, color: "#111", margin: "6px 0 0", letterSpacing: "-0.02em" }}>
-        {value}
-      </p>
-      {hint && <p style={{ fontSize: 12, color: "#a3a3a3", margin: "4px 0 0" }}>{hint}</p>}
-    </div>
-  );
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Backend days are calendar dates ("2026-11-05"); parse without a timezone
+// shift so the axis never shows the previous day.
+function parseDay(day: string): { m: number; d: number } {
+  const [, m, d] = day.slice(0, 10).split("-").map(Number);
+  return { m: (m || 1) - 1, d: d || 1 };
+}
+
+function axisLabel(day: string, i: number, prev?: string): string {
+  const { m, d } = parseDay(day);
+  if (i === 0 || (prev && parseDay(prev).m !== m)) return `${MONTHS[m]} ${d}`;
+  return String(d);
 }
 
 function VolumeChart({ data }: { data: { day: string; count: number }[] }) {
   const max = Math.max(1, ...data.map((d) => d.count));
+  const total = data.reduce((n, d) => n + d.count, 0);
+  const busiest = data.reduce<{ day: string; count: number } | null>((b, d) => (!b || d.count > b.count ? d : b), null);
+  const busiestLabel = busiest && busiest.count > 0 ? (() => { const { m, d } = parseDay(busiest.day); return `${MONTHS[m]} ${d}`; })() : null;
+
   return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid #EBEBEB",
-        borderRadius: 12,
-        padding: "22px 24px",
-      }}
-    >
-      <p style={{ fontSize: 14, color: "#111", margin: "0 0 18px" }}>Questions over the last 14 days</p>
+    <div className="a-card a-chart">
+      <div className="a-chart-head">
+        <h2>Questions over the last 14 days</h2>
+        <span>
+          {total.toLocaleString()} question{total === 1 ? "" : "s"}
+          {busiestLabel ? ` · busiest day ${busiestLabel}` : ""}
+        </span>
+      </div>
       {data.length === 0 ? (
-        <p style={{ fontSize: 13, color: "#a3a3a3", margin: 0 }}>No questions yet.</p>
+        <p style={{ fontSize: 13, color: "var(--a-muted)" }}>No questions yet.</p>
       ) : (
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
-          {data.map((d) => (
-            <div key={d.day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <div
-                title={`${d.count} on ${d.day}`}
-                style={{
-                  width: "100%",
-                  maxWidth: 28,
-                  height: `${Math.max(4, (d.count / max) * 100)}%`,
-                  background: "var(--brand-olive, #6b7250)",
-                  borderRadius: 4,
-                  transition: "height 300ms ease-out",
-                }}
-              />
-              <span style={{ fontSize: 10, color: "#a3a3a3" }}>
-                {new Date(d.day).getDate()}
-              </span>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="a-bars" role="img" aria-label={`Questions per day, ${total} total`}>
+            {data.map((d) => (
+              <div key={d.day} className="col" title={`${d.count} on ${d.day}`}>
+                <span className="n">{d.count}</span>
+                <div className="bar" style={{ ["--h" as string]: d.count / max }} />
+              </div>
+            ))}
+          </div>
+          <div className="a-bars-x">
+            {data.map((d, i) => (
+              <div key={d.day}>{axisLabel(d.day, i, data[i - 1]?.day)}</div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -80,6 +75,7 @@ export default function AnalyticsClient() {
   const [data, setData] = useState<Analytics | null>(analyticsCache);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(analyticsCache === null);
+  const summary = useWorkspaceSummary();
 
   useEffect(() => {
     let cancelled = false;
@@ -116,75 +112,60 @@ export default function AnalyticsClient() {
   // Loading only blocks the first-ever fetch — once cached, stale cards stay
   // on screen while a fresh fetch resolves in the background.
   if (loading && !data) {
-    return <p style={{ fontSize: 14, color: "#a3a3a3" }}>Loading…</p>;
+    return <p style={{ fontSize: 14, color: "var(--a-muted)" }}>Loading…</p>;
   }
   if (error && !data) {
-    return <p style={{ fontSize: 14, color: "#dc2626" }}>{error}</p>;
+    return <div className="a-notice err">{error}</div>;
   }
   if (!data || !derived) return null;
 
   const { answered, answerRate } = derived;
+  const topMax = Math.max(1, ...data.top_questions.map((q) => q.count));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* Stat tiles */}
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <StatTile label="Questions asked" value={String(data.total_questions)} />
-        <StatTile
-          label="Answered from docs"
+    <>
+      <div className="a-stats" style={{ marginBottom: 24 }}>
+        <StatCard icon={<ChatTeardropText size={16} />} value={data.total_questions.toLocaleString()} label="Questions asked" hint="All time" />
+        <StatCard
+          icon={<CheckCircle size={16} weight="fill" color="var(--a-olive)" />}
           value={`${answerRate}%`}
-          hint={`${answered} of ${data.total_questions}`}
+          label="Answered from docs"
+          hint={`${answered.toLocaleString()} of ${data.total_questions.toLocaleString()} questions`}
         />
-        <StatTile
-          label="Unanswered"
-          value={String(data.unanswered_count)}
-          hint="Fell back to staff directory"
+        <StatCard icon={<Users size={16} />} value={data.unanswered_count.toLocaleString()} label="Unanswered" hint="Suggested a teammate instead" />
+        <StatCard
+          icon={<ClockCounterClockwise size={16} />}
+          value={data.active_threads.toLocaleString()}
+          label="Conversations"
+          hint={summary ? `Across ${summary.members} member${summary.members === 1 ? "" : "s"}` : undefined}
         />
-        <StatTile label="Conversations" value={String(data.active_threads)} />
       </div>
 
-      {/* Volume */}
       <VolumeChart data={data.volume} />
 
-      {/* Top questions */}
-      <div style={{ background: "#fff", border: "1px solid #EBEBEB", borderRadius: 12, padding: "22px 24px" }}>
-        <p style={{ fontSize: 14, color: "#111", margin: "0 0 16px" }}>Top questions</p>
+      <div className="a-sec-t"><h2>Top questions</h2></div>
+      <div className="a-card a-clip">
         {data.top_questions.length === 0 ? (
-          <p style={{ fontSize: 13, color: "#a3a3a3", margin: 0 }}>No questions yet.</p>
+          <p style={{ fontSize: 13, color: "var(--a-muted)", padding: "20px" }}>No questions yet.</p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <>
+            <div className="a-topq head">
+              <span>#</span>
+              <span>Question</span>
+              <span className="a-only-d">Compared with the top question</span>
+              <span style={{ textAlign: "right" }}>Asked</span>
+            </div>
             {data.top_questions.map((q, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "10px 0",
-                  borderTop: i === 0 ? "none" : "1px solid #f0f0f0",
-                }}
-              >
-                <span style={{ fontSize: 13, color: "#a3a3a3", width: 20, flexShrink: 0 }}>{i + 1}</span>
-                <span
-                  style={{
-                    flex: 1,
-                    fontSize: 14,
-                    color: "#333",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {q.question}
-                </span>
-                <span style={{ fontSize: 13, color: "#6b6b6b", flexShrink: 0 }}>
-                  {q.count}×
-                </span>
+              <div key={i} className="a-topq">
+                <span style={{ fontSize: 12, color: "var(--a-muted)" }} className="a-num">{i + 1}</span>
+                <span style={{ fontSize: 14, minWidth: 0, overflowWrap: "anywhere" }}>{q.question}</span>
+                <div className="a-bar a-only-d"><span style={{ width: `${(q.count / topMax) * 100}%` }} /></div>
+                <span className="a-num" style={{ textAlign: "right", fontSize: 13 }}>{q.count}</span>
               </div>
             ))}
-          </div>
+          </>
         )}
       </div>
-    </div>
+    </>
   );
 }

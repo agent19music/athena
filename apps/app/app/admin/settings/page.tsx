@@ -1,8 +1,8 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import SettingsClient from "./SettingsClient";
-import DashboardShell from "../../../components/DashboardShell";
-import PageFadeIn from "../../../components/PageFadeIn";
+import DashboardShell, { AppPage } from "../../../components/DashboardShell";
+import { PageHeader } from "../../../components/athena/ui";
 
 export default async function SettingsPage() {
   const { userId, orgId, orgRole, orgSlug } = await auth();
@@ -17,7 +17,8 @@ export default async function SettingsPage() {
     const client = await clerkClient();
     const org = await client.organizations.getOrganization({ organizationId: orgId });
     orgName = org.name;
-    orgLogo = org.imageUrl ?? null;
+    // Clerk always returns a generated imageUrl; only a real upload counts.
+    orgLogo = org.hasImage ? org.imageUrl : null;
   } catch {
     // Clerk Backend API errors (bad secret, missing org, 5xx) used to crash
     // this page with an empty Server Components error. Dashboard already
@@ -26,24 +27,10 @@ export default async function SettingsPage() {
 
   return (
     <DashboardShell>
-      <main style={{ flex: 1, overflowY: "auto", background: "#FAFAFA" }}>
-        <PageFadeIn style={{ maxWidth: 880, margin: "0 auto", padding: "56px 48px 80px" }}>
-          <h1
-            style={{
-              fontSize: 32,
-              fontWeight: 400,
-              letterSpacing: "-0.025em",
-              color: "#111",
-              lineHeight: 1.2,
-              marginBottom: 48,
-            }}
-          >
-            Settings
-          </h1>
-
-          <SettingsClient orgName={orgName} orgLogo={orgLogo} />
-        </PageFadeIn>
-      </main>
+      <AppPage narrow>
+        <PageHeader title="Settings" sub="Organisation details and where Athena gets its knowledge." />
+        <SettingsClient orgName={orgName} orgLogo={orgLogo} orgId={orgId} />
+      </AppPage>
     </DashboardShell>
   );
 }

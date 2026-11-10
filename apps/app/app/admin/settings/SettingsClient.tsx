@@ -1,34 +1,32 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
-import { ArrowRight, Camera, PencilSimple } from "@phosphor-icons/react";
-import FileUploadCard from "./FileUploadCard";
-import { Button } from "../../../components/Button";
+import { ArrowRight, Camera, PencilSimple, UploadSimple } from "@phosphor-icons/react";
+import { OrgLogo } from "../../../components/athena/Orb";
 
-const arrowIcon = <ArrowRight size={14} />;
-const cameraIcon = <Camera size={18} />;
-const pencilIcon = <PencilSimple size={14} />;
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 24,
-        padding: "24px 0",
-        borderBottom: "1px solid #e5e5e5",
-      }}
-    >
-      <p style={{ fontSize: 14, color: "#6b6b6b", minWidth: 160, margin: 0, paddingTop: 2 }}>
-        {label}
-      </p>
-      <div style={{ flex: 1 }}>{children}</div>
+    <div className="a-set-row">
+      <div className="k">
+        <div className="t">{title}</div>
+        <div className="d">{desc}</div>
+      </div>
+      <div className="v">{children}</div>
     </div>
   );
 }
 
-function LogoUpload({ initialLogo }: { initialLogo: string | null }) {
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <div className="a-kicker" style={{ marginBottom: 10 }}>{label}</div>
+      <div className="a-card a-clip a-divide a-set-card">{children}</div>
+    </>
+  );
+}
+
+function LogoUpload({ initialLogo, seed }: { initialLogo: string | null; seed: string }) {
   const [logo, setLogo] = useState(initialLogo);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -51,47 +49,26 @@ function LogoUpload({ initialLogo }: { initialLogo: string | null }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <>
       <input
         ref={fileRef}
         type="file"
         accept="image/png,image/jpeg,image/gif,image/webp"
-        style={{ display: "none" }}
-        onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
-      />
-      <button
-        onClick={() => !uploading && fileRef.current?.click()}
-        className="logo-upload"
-        aria-label="Upload organisation logo"
-        style={{
-          position: "relative",
-          width: 48,
-          height: 48,
-          borderRadius: 10,
-          cursor: uploading ? "not-allowed" : "pointer",
-          border: logo ? "none" : "1.5px dashed #d4d4d4",
-          background: logo ? "transparent" : "#fafafa",
-          padding: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#a3a3a3",
+        hidden
+        onChange={(e) => {
+          if (e.target.files?.[0]) upload(e.target.files[0]);
+          e.target.value = "";
         }}
-      >
-        {uploading ? (
-          <span className="spinner" />
-        ) : logo ? (
-          <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logo} alt="Org logo" style={{ width: 48, height: 48, objectFit: "cover", display: "block", borderRadius: 10 }} />
-            <div className="logo-overlay">{cameraIcon}</div>
-          </div>
-        ) : (
-          cameraIcon
-        )}
+      />
+      <span style={{ display: "flex", borderRadius: 12, overflow: "hidden", border: "1px solid var(--a-line)", width: 48, height: 48, flexShrink: 0 }}>
+        <OrgLogo src={logo} seed={seed} size={48} />
+      </span>
+      <button type="button" className="a-btn a-btn-secondary a-btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+        <Camera size={14} />
+        {uploading ? "Uploading…" : logo ? "Replace logo" : "Upload logo"}
       </button>
-      {error && <p style={{ fontSize: 13, color: "#e05a5a", margin: 0 }}>{error}</p>}
-    </div>
+      {error && <p style={{ fontSize: 13, color: "var(--a-danger)", width: "100%", textAlign: "inherit" }}>{error}</p>}
+    </>
   );
 }
 
@@ -149,140 +126,75 @@ function InlineNameEdit({ initialName }: { initialName: string }) {
 
   if (editing) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <>
+        <div className="a-input" style={{ width: 260, maxWidth: "100%" }}>
           <input
             ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             disabled={saving}
-            style={{
-              fontSize: 15,
-              fontWeight: 400,
-              color: "#1a1a1a",
-              border: "1px solid #e5e5e5",
-              borderRadius: 8,
-              padding: "6px 12px",
-              outline: "none",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-              background: "#fff",
-              width: 260,
-              // ponytail: focus border via JS, avoids extra CSS class for one field
-              transition: "border-color 150ms",
-            }}
-            onFocus={(e) => (e.target.style.borderColor = "#1a1a1a")}
-            onBlur={(e) => (e.target.style.borderColor = "#e5e5e5")}
+            aria-label="Organisation name"
           />
-          <Button
-            onClick={save}
-            disabled={saving}
-            variant="secondary"
-            size="sm"
-            full
-          >
-            {saving ? "Saving…" : "Save"}
-          </Button>
-          <Button
-            onClick={cancel}
-            disabled={saving}
-            variant="ghost"
-            size="sm"
-            full
-          >
-            Cancel
-          </Button>
         </div>
-        {error && <p style={{ fontSize: 13, color: "#e05a5a", margin: 0 }}>{error}</p>}
-      </div>
+        <button type="button" className="a-btn a-btn-primary a-btn-sm" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button type="button" className="a-btn a-btn-ghost a-btn-sm" onClick={cancel} disabled={saving}>
+          Cancel
+        </button>
+        {error && <p style={{ fontSize: 13, color: "var(--a-danger)", width: "100%" }}>{error}</p>}
+      </>
     );
   }
 
   return (
-    <div className="edit-row">
-      <p
-        style={{ fontSize: 15, color: "#1a1a1a", margin: 0, cursor: "pointer" }}
-        onClick={startEdit}
-      >
-        {displayName}
-      </p>
-      <button
-        className="pencil-icon"
-        onClick={startEdit}
-        aria-label="Edit organisation name"
-        style={{ background: "none", border: "none", padding: 2, lineHeight: 0 }}
-      >
-        {pencilIcon}
+    <>
+      <span style={{ fontSize: 14 }}>{displayName}</span>
+      <button type="button" className="a-icon-btn sm" onClick={startEdit} aria-label="Edit name">
+        <PencilSimple size={14} />
       </button>
-    </div>
+    </>
   );
 }
-
 
 export default function SettingsClient({
   orgName,
   orgLogo,
+  orgId,
 }: {
   orgName: string;
   orgLogo: string | null;
+  orgId?: string;
 }) {
   return (
-    <div>
-      {/* Org info */}
-      <section style={{ marginBottom: 64 }}>
-        <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 1px 0", letterSpacing: "-0.01em" }}>
-          Organisation
-        </h2>
-        <div style={{ borderTop: "1px solid #e5e5e5", marginTop: 16 }}>
-          <Row label="Name">
-            <InlineNameEdit initialName={orgName} />
-          </Row>
-          <Row label="Logo">
-            <LogoUpload initialLogo={orgLogo} />
-          </Row>
-        </div>
-      </section>
+    <>
+      <Section label="Organisation">
+        <Row title="Name" desc="Shown to everyone in your workspace.">
+          <InlineNameEdit initialName={orgName} />
+        </Row>
+        <Row title="Logo" desc="PNG or SVG, square works best.">
+          <LogoUpload initialLogo={orgLogo} seed={orgId ?? orgName} />
+        </Row>
+      </Section>
 
-      {/* Connections */}
-      <section style={{ marginBottom: 64 }}>
-        <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 1px 0", letterSpacing: "-0.01em" }}>
-          Connections
-        </h2>
-        <div style={{ borderTop: "1px solid #e5e5e5", marginTop: 16 }}>
-          <Row label="Data sources">
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ fontSize: 15, color: "#6b6b6b", margin: 0, lineHeight: 1.55 }}>
-                Manage your Notion, Google Docs, and Drive integrations — and trigger a manual sync.
-              </p>
-              <Button
-                href="/admin/connections"
-                variant="secondary"
-                full
-                style={{ alignSelf: "flex-start" }}
-              >
-                Manage connections {arrowIcon}
-              </Button>
-            </div>
-          </Row>
-        </div>
-      </section>
+      <Section label="Connections">
+        <Row title="Data sources" desc="Manage your Notion, Google Docs and Drive integrations, and run a manual sync.">
+          <Link href="/admin/connections" className="a-btn a-btn-secondary a-btn-sm">
+            Manage connections
+            <ArrowRight size={12} />
+          </Link>
+        </Row>
+      </Section>
 
-      {/* Upload files */}
-      <section style={{ marginBottom: 64 }}>
-        <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 1px 0", letterSpacing: "-0.01em" }}>
-          Upload files
-        </h2>
-        <div style={{ borderTop: "1px solid #e5e5e5", marginTop: 16 }}>
-          <Row label="Documents">
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <p style={{ fontSize: 15, color: "#6b6b6b", margin: 0, lineHeight: 1.55 }}>
-                Upload internal documents directly from your device. Supported formats: PDF, Word, Markdown, plain text, HTML, CSV.
-              </p>
-              <FileUploadCard />
-            </div>
-          </Row>
-        </div>
-      </section>
-    </div>
+      <Section label="Upload files">
+        <Row title="Documents" desc="PDF, Word, Markdown, plain text, HTML and CSV.">
+          <Link href="/admin/files" className="a-btn a-btn-secondary a-btn-sm">
+            <UploadSimple size={14} />
+            Upload files
+          </Link>
+        </Row>
+      </Section>
+    </>
   );
 }

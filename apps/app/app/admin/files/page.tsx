@@ -1,11 +1,10 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { UploadSimple, Plus, FolderSimplePlus, CaretRight, CaretDown } from "@phosphor-icons/react";
-import DashboardShell from "../../../components/DashboardShell";
-import PageFadeIn from "../../../components/PageFadeIn";
-import { Button } from "../../../components/Button";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CaretDown, CaretRight, FileText, FolderSimplePlus, MagnifyingGlass, Plugs, Plus, UploadSimple } from "@phosphor-icons/react";
+import DashboardShell, { AppPage } from "../../../components/DashboardShell";
+import { BtnLink, PageHeader, SectionTitle, Tag, Tile } from "../../../components/athena/ui";
 import UploadQueue, { type QueueItem } from "./UploadQueue";
 import { uploadFailureReason, uploadToBackend } from "../../../lib/uploadToBackend";
 import { userFacingError } from "../../../lib/userFacingError";
@@ -73,28 +72,19 @@ const SOURCE_LABELS: Record<string, string> = {
   mock: "Sample",
 };
 
-const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
-  PDF: { bg: "#FEF2F2", text: "#DC2626" },
-  DOCX: { bg: "#EFF6FF", text: "#2563EB" },
-  DOC: { bg: "#EFF6FF", text: "#2563EB" },
-  MD: { bg: "#F0FDF4", text: "#16A34A" },
-  TXT: { bg: "#F0FDF4", text: "#16A34A" },
-  CSV: { bg: "#FFFBEB", text: "#D97706" },
-  HTML: { bg: "#FDF4FF", text: "#9333EA" },
-  NOTION: { bg: "#F4F4F4", text: "#555" },
-};
-
 function fileTypeFor(doc: BackendDocument): string {
   const name = doc.title || doc.doc_id;
   const ext = name.includes(".") ? name.split(".").pop()?.toUpperCase() : null;
   if (ext && ext.length <= 5) return ext;
   if (doc.source_type === "notion") return "NOTION";
+  if (doc.source_type === "google_docs") return "GDOC";
+  if (doc.source_type === "tally") return "FORM";
   return "DOC";
 }
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function mapDocuments(docs: BackendDocument[]): DocRow[] {
@@ -160,46 +150,24 @@ function GroupChildren({ groupKey }: { groupKey: string }) {
   }, [loadPage]);
 
   return (
-    <div style={{ background: "#FCFCFC", borderBottom: "1px solid #F0F0F0" }}>
+    <div style={{ background: "var(--a-bg)", borderTop: "1px solid var(--a-line)" }}>
       <div style={{ maxHeight: GROUP_MAX_HEIGHT, overflowY: "auto" }}>
         {rows.map(r => (
-          <div
-            key={r.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 72px 120px 100px",
-              padding: "9px 20px 9px 44px",
-              borderBottom: "1px solid #F6F6F6",
-              alignItems: "center",
-            }}
-          >
-            <p style={{ fontSize: 13, color: "#444", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {r.name}
-            </p>
-            <span style={{ fontSize: 11, color: "#bbb" }}>{r.chunks} chunks</span>
-            <span style={{ fontSize: 12.5, color: "#999" }}>{r.uploaded}</span>
-            <span />
+          <div key={r.id} className="a-group-child">
+            <span className="a-ellipsis" style={{ fontSize: 13 }}>{r.name}</span>
+            <span style={{ fontSize: 12, color: "var(--a-muted)", flexShrink: 0 }}>{r.chunks} chunks · {r.uploaded}</span>
           </div>
         ))}
-
-        {error && (
-          <p style={{ fontSize: 12.5, color: "#b91c1c", margin: 0, padding: "12px 20px 12px 44px" }}>{error}</p>
-        )}
+        {error && <p style={{ fontSize: 13, color: "var(--a-danger)", padding: "12px 20px 12px 44px" }}>{error}</p>}
       </div>
-
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px 12px 44px" }}>
-        <span style={{ fontSize: 12, color: "#aaa" }}>
+        <span style={{ fontSize: 12, color: "var(--a-muted)" }}>
           Showing {rows.length.toLocaleString()} of {total.toLocaleString()}
         </span>
         {rows.length < total && (
-          <Button
-            onClick={() => loadPage(rows.length)}
-            disabled={loading}
-            variant="secondary"
-            size="sm"
-          >
+          <button type="button" className="a-btn a-btn-secondary a-btn-sm" onClick={() => loadPage(rows.length)} disabled={loading}>
             {loading ? "Loading…" : `Load ${Math.min(GROUP_PAGE_SIZE, total - rows.length)} more`}
-          </Button>
+          </button>
         )}
       </div>
     </div>
@@ -214,6 +182,8 @@ export default function FilesPage() {
   const [dragging, setDragging] = useState(false);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [paid, setPaid] = useState<boolean | null>(null);
+  const [query, setQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("All");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<QueueItem[]>([]);
@@ -383,286 +353,237 @@ export default function FilesPage() {
     setQueue((prev) => prev.filter((q) => q.id !== id));
   }, []);
 
+  const sources = useMemo(() => Array.from(new Set(files.map((f) => f.source))).sort(), [files]);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return files.filter((f) => {
+      if (sourceFilter !== "All" && f.source !== sourceFilter) return false;
+      if (!q) return true;
+      const name = f.kind === "group" ? f.label : f.name;
+      return name.toLowerCase().includes(q);
+    });
+  }, [files, query, sourceFilter]);
+
+  const summary = loading
+    ? "Loading…"
+    : `${totalDocuments.toLocaleString()} document${totalDocuments === 1 ? "" : "s"} · ${totalChunks.toLocaleString()} chunks indexed${activeCount > 0 ? ` · ${activeCount} uploading` : ""}`;
+
+  function rowMeta(f: Row) {
+    return f.kind === "group"
+      ? `${f.docCount.toLocaleString()} responses · ${f.chunks.toLocaleString()} chunks`
+      : `${f.chunks.toLocaleString()} chunks`;
+  }
+
   return (
     <DashboardShell>
-      <main style={{ flex: 1, overflowY: "auto", background: "#FAFAFA" }}>
-        <PageFadeIn style={{ maxWidth: 880, margin: "0 auto", padding: "56px 48px 80px" }}>
+      <AppPage>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.doc,.docx,.txt,.md,.html,.htm,.csv"
+          hidden
+          onChange={(e) => {
+            if (e.target.files?.length) {
+              uploadFiles(Array.from(e.target.files));
+              e.target.value = "";
+            }
+          }}
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          // @ts-expect-error — webkitdirectory is not in React's types
+          webkitdirectory=""
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files?.length) {
+              uploadFiles(Array.from(e.target.files));
+              e.target.value = "";
+            }
+          }}
+        />
 
-          {/* Hidden File Input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.doc,.docx,.txt,.md,.html,.htm,.csv"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              if (e.target.files?.length) {
-                uploadFiles(Array.from(e.target.files));
-                e.target.value = "";
-              }
-            }}
-          />
-
-          {/* Hidden Folder Input */}
-          <input
-            ref={folderInputRef}
-            type="file"
-            // @ts-expect-error — webkitdirectory is not in React's types
-            webkitdirectory=""
-            multiple
-            style={{ display: "none" }}
-            onChange={(e) => {
-              if (e.target.files?.length) {
-                uploadFiles(Array.from(e.target.files));
-                e.target.value = "";
-              }
-            }}
-          />
-
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 40 }}>
-            <div>
-              <h1 style={{ fontSize: 32, fontWeight: 400, letterSpacing: "-0.025em", color: "#111", lineHeight: 1.2, margin: 0 }}>
-                Files
-              </h1>
-              <p style={{ fontSize: 14, color: "#888", marginTop: 8 }}>
-                {loading
-                  ? "Loading…"
-                  : `${totalDocuments.toLocaleString()} documents · ${totalChunks.toLocaleString()} chunks indexed`}
-                {activeCount > 0 && ` · ${activeCount} uploading`}
-              </p>
-            </div>
-          </div>
-
-          {/* Drop zone / Click to upload */}
-          <div
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              if (e.dataTransfer.files?.length) {
-                uploadFiles(Array.from(e.dataTransfer.files));
-              }
-            }}
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: `2px dashed ${dragging ? "#1a1a1a" : "#DCDCDC"}`,
-              borderRadius: 12,
-              padding: "36px 24px",
-              textAlign: "center",
-              marginBottom: 32,
-              background: dragging ? "#F4F4F4" : "#fff",
-              transition: "border-color 150ms var(--ease-out), background 150ms var(--ease-out), transform 150ms var(--ease-out)",
-              cursor: "pointer",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 12,
-            }}
-          >
+        <PageHeader
+          title="Files"
+          sub={summary}
+          hideActionsOnMobile
+          actions={
             <>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    background: "#F5F5F5",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#555",
-                  }}
-                >
-                  <UploadSimple size={22} />
-                </div>
-                <div>
-                  <p style={{ fontSize: 14, fontWeight: 400, color: "#1a1a1a", margin: "0 0 4px" }}>
-                    Drop files or a folder here, or pick them below
-                  </p>
-                  <p style={{ fontSize: 12, color: "#888", margin: 0 }}>
-                    PDF, Word, Markdown, plain text, HTML, CSV — up to 25 MB per file
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-                  <Button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      fileInputRef.current?.click();
-                    }}
-                    variant="secondary"
-                    full
-                  >
-                    <Plus size={14} /> Choose files
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      folderInputRef.current?.click();
-                    }}
-                    variant="secondary"
-                    full
-                  >
-                    <FolderSimplePlus size={14} /> Choose folder
-                  </Button>
-                </div>
+              <BtnLink href="/admin/connections" variant="secondary">
+                <Plugs size={14} />
+                Connect a source
+              </BtnLink>
+              <button type="button" className="a-btn a-btn-primary" onClick={() => fileInputRef.current?.click()}>
+                <UploadSimple size={14} />
+                Upload files
+              </button>
             </>
-          </div>
+          }
+        />
 
-          <UploadQueue items={queue} onRetry={retryItem} onDismiss={dismissItem} />
-
-          {/* File table */}
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #E8E8E8",
-              borderRadius: 12,
-              overflow: "hidden",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-            }}
-          >
-            {/* Table header */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 72px 120px 100px",
-                padding: "10px 20px",
-                borderBottom: "1px solid #F0F0F0",
-                background: "#FAFAFA",
-              }}
-            >
-              {["Name", "Type", "Last indexed", "Source"].map(h => (
-                <span key={h} style={{ fontSize: 11, color: "#aaa", letterSpacing: "0" }}>
-                  {h}
-                </span>
-              ))}
+        <div
+          className={`a-drop${dragging ? " over" : ""}`}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (e.dataTransfer.files?.length) uploadFiles(Array.from(e.dataTransfer.files));
+          }}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+        >
+          <Tile><UploadSimple size={16} /></Tile>
+          <div>
+            <div style={{ fontSize: 14 }}>Drop files or a folder here, or choose them below</div>
+            <div style={{ fontSize: 12, color: "var(--a-muted)", marginTop: 4 }}>
+              PDF, Word, Markdown, plain text, HTML and CSV, up to 25 MB per file
             </div>
+          </div>
+          <div className="a-drop-actions">
+            <button type="button" className="a-btn a-btn-secondary" onClick={() => fileInputRef.current?.click()}>
+              <Plus size={14} />
+              Choose files
+            </button>
+            <button type="button" className="a-btn a-btn-secondary" onClick={() => folderInputRef.current?.click()}>
+              <FolderSimplePlus size={14} />
+              Choose folder
+            </button>
+          </div>
+        </div>
 
-            {/* Rows */}
-            {!loading && files.length === 0 ? (
-              <div style={{ padding: "32px 20px", textAlign: "center" }}>
-                <p style={{ fontSize: 13.5, color: "#999", margin: 0 }}>
-                  No documents yet. Drop a file above or connect a source to get started.
-                </p>
-              </div>
-            ) : (
-              files.map((f, i) => {
-                const isLast = i === files.length - 1;
+        <UploadQueue items={queue} onRetry={retryItem} onDismiss={dismissItem} />
+        {queue.length === 0 && <div style={{ height: 16 }} />}
 
-                if (f.kind === "group") {
-                  const isOpen = expanded.has(f.key);
+        <SectionTitle
+          aside={
+            <div className="a-only-d" style={{ display: "flex", gap: 8 }}>
+              <label className="a-input pill a-search">
+                <MagnifyingGlass size={14} color="var(--a-faint)" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search documents" aria-label="Search documents" />
+              </label>
+              <label className="a-btn a-btn-secondary" style={{ position: "relative" }}>
+                Source · {sourceFilter}
+                <CaretDown size={12} />
+                <select
+                  aria-label="Filter by source"
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+                >
+                  <option value="All">All</option>
+                  {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            </div>
+          }
+        >
+          Indexed documents
+        </SectionTitle>
+        <label className="a-input pill a-search a-only-m">
+          <MagnifyingGlass size={14} color="var(--a-faint)" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search documents" aria-label="Search documents" />
+        </label>
+
+        <div className="a-card a-clip">
+          {!loading && visible.length === 0 ? (
+            <div style={{ padding: "40px 24px", textAlign: "center", color: "var(--a-muted)", fontSize: 14 }}>
+              {files.length === 0 ? "No documents indexed yet. Upload files or connect a source to get started." : "No documents match your search."}
+            </div>
+          ) : (
+            <>
+              <table className="a-tbl a-only-d">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th style={{ width: 120 }}>Type</th>
+                    <th style={{ width: 180 }}>Last indexed</th>
+                    <th style={{ width: 160 }}>Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading && (
+                    <tr><td colSpan={4} className="muted">Loading…</td></tr>
+                  )}
+                  {visible.map((f) => {
+                    if (f.kind === "group") {
+                      const open = expanded.has(f.key);
+                      return (
+                        <Fragment key={f.key}>
+                          <tr className="click" onClick={() => toggleGroup(f.key)} aria-expanded={open}>
+                            <td>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                {open ? <CaretDown size={14} color="var(--a-muted)" /> : <CaretRight size={14} color="var(--a-muted)" />}
+                                <div style={{ minWidth: 0 }}>
+                                  <div className="a-ellipsis">{f.label}</div>
+                                  <div style={{ fontSize: 12, color: "var(--a-muted)" }}>{rowMeta(f)}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td><Tag>FORM</Tag></td>
+                            <td className="muted">{f.uploaded}</td>
+                            <td className="muted">{f.source}</td>
+                          </tr>
+                          {open && (
+                            <tr>
+                              <td colSpan={4} style={{ padding: 0, height: "auto" }}>
+                                <GroupChildren groupKey={f.key} />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    }
+                    return (
+                      <tr key={f.id}>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <FileText size={16} color="var(--a-muted)" style={{ flexShrink: 0 }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div className="a-ellipsis" title={f.name}>{f.name}</div>
+                              <div style={{ fontSize: 12, color: "var(--a-muted)" }}>{rowMeta(f)}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td><Tag>{f.type}</Tag></td>
+                        <td className="muted">{f.uploaded}</td>
+                        <td className="muted">{f.source}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <div className="a-only-m a-files-list a-divide">
+                {loading && <div className="item" style={{ color: "var(--a-muted)" }}>Loading…</div>}
+                {visible.map((f) => {
+                  const isGroup = f.kind === "group";
+                  const key = isGroup ? f.key : f.id;
+                  const open = isGroup && expanded.has(f.key);
                   return (
-                    <div key={f.key}>
+                    <div key={key}>
                       <div
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={isOpen}
-                        onClick={() => toggleGroup(f.key)}
-                        onKeyDown={e => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            toggleGroup(f.key);
-                          }
-                        }}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 72px 120px 100px",
-                          padding: "12px 20px",
-                          borderBottom: isLast && !isOpen ? "none" : "1px solid #F6F6F6",
-                          alignItems: "center",
-                          cursor: "pointer",
-                          transition: "background 100ms",
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "#FAFAFA")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "")}
+                        className="item"
+                        onClick={isGroup ? () => toggleGroup(f.key) : undefined}
+                        style={isGroup ? { cursor: "pointer" } : undefined}
                       >
-                        <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ color: "#bbb", display: "inline-flex", flexShrink: 0 }}>
-                            {isOpen ? <CaretDown size={13} /> : <CaretRight size={13} />}
-                          </span>
-                          <div style={{ minWidth: 0 }}>
-                            <p style={{ fontSize: 13.5, fontWeight: 400, color: "#222", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {f.label}
-                            </p>
-                            <p style={{ fontSize: 11, color: "#bbb", margin: "2px 0 0" }}>
-                              {f.docCount.toLocaleString()} responses · {f.chunks.toLocaleString()} chunks
-                            </p>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="a-ellipsis" style={{ fontSize: 14 }}>{isGroup ? f.label : f.name}</div>
+                          <div className="a-ellipsis" style={{ fontSize: 12, color: "var(--a-muted)" }}>
+                            {f.source} · {f.uploaded} · {rowMeta(f)}
                           </div>
                         </div>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 400,
-                            color: "#555",
-                            background: "#F4F4F4",
-                            borderRadius: 4,
-                            padding: "3px 7px",
-                            display: "inline-block",
-                            letterSpacing: "-0.01em",
-                            width: "fit-content",
-                          }}
-                        >
-                          FORM
-                        </span>
-                        <span style={{ fontSize: 12.5, color: "#999" }}>{f.uploaded}</span>
-                        <span style={{ fontSize: 12.5, color: "#bbb" }}>{f.source}</span>
+                        <Tag>{isGroup ? "FORM" : f.type}</Tag>
                       </div>
-                      {isOpen && <GroupChildren groupKey={f.key} />}
+                      {open && <GroupChildren groupKey={f.key} />}
                     </div>
                   );
-                }
-
-                const tc = TYPE_COLORS[f.type] ?? { bg: "#F4F4F4", text: "#555" };
-                return (
-                  <div
-                    key={f.id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 72px 120px 100px",
-                      padding: "12px 20px",
-                      borderBottom: isLast ? "none" : "1px solid #F6F6F6",
-                      alignItems: "center",
-                      transition: "background 100ms",
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#FAFAFA")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "")}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: 13.5, fontWeight: 400, color: "#222", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {f.name}
-                      </p>
-                      <p style={{ fontSize: 11, color: "#bbb", margin: 0, marginTop: 2 }}>
-                        {f.chunks} chunks
-                      </p>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 400,
-                        color: tc.text,
-                        background: tc.bg,
-                        borderRadius: 4,
-                        padding: "3px 7px",
-                        display: "inline-block",
-                        letterSpacing: "-0.01em",
-                        width: "fit-content",
-                      }}
-                    >
-                      {f.type}
-                    </span>
-                    <span style={{ fontSize: 12.5, color: "#999" }}>{f.uploaded}</span>
-                    <span style={{ fontSize: 12.5, color: "#bbb" }}>{f.source}</span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-        </PageFadeIn>
-      </main>
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      </AppPage>
     </DashboardShell>
   );
 }

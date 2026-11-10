@@ -6,6 +6,8 @@ export type Member = {
   email: string;
   name: string;
   joinedAt: string;
+  /** Profile photo when the person uploaded one; null means show the seeded orb. */
+  imageUrl: string | null;
 };
 
 export type PendingInvitation = {
@@ -16,7 +18,7 @@ export type PendingInvitation = {
 };
 
 function formatDate(iso: string | number): string {
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 // Shared by the staff page's initial server render and the /api/admin/staff
@@ -36,6 +38,7 @@ export async function loadStaff(orgId: string) {
       email: m.publicUserData?.identifier ?? "",
       name: [m.publicUserData?.firstName, m.publicUserData?.lastName].filter(Boolean).join(" "),
       joinedAt: formatDate(m.createdAt),
+      imageUrl: m.publicUserData?.hasImage ? m.publicUserData.imageUrl : null,
     }));
 
     const pendingInvitations: PendingInvitation[] = invitations.data.map((i) => ({

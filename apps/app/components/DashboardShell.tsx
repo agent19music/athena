@@ -1,94 +1,137 @@
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
+import { useOrganization } from "@clerk/nextjs";
 import Link from "next/link";
-import SideNav from "./SideNav";
-import { Button } from "./Button";
+import { usePathname } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  CaretRight,
+  ChatTeardropText,
+  DotsThree,
+  FileText,
+  House,
+  SignOut,
+  Users,
+  X,
+  type Icon,
+} from "@phosphor-icons/react";
+import SideNav, { ADMIN_ITEMS, isNavActive, SignOutDialog } from "./SideNav";
+import { OrgLogo } from "./athena/Orb";
 
-export default function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+const TABS: { label: string; href: string; icon: Icon; admin?: boolean }[] = [
+  { label: "Overview", href: "/dashboard", icon: House },
+  { label: "Chat", href: "/chat", icon: ChatTeardropText },
+  { label: "Files", href: "/admin/files", icon: FileText, admin: true },
+  { label: "Team", href: "/admin/staff", icon: Users, admin: true },
+];
+
+const MORE_HREFS = ["/admin/connections", "/admin/analytics", "/admin/settings", "/admin/billing"];
+
+function MoreSheet({ open, isAdmin, onClose, onSignOut }: { open: boolean; isAdmin: boolean; onClose: () => void; onSignOut: () => void }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  const items = ADMIN_ITEMS.filter((i) => MORE_HREFS.includes(i.href));
+  return (
+    <div className="a-scrim sheet" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="a-sheet" role="dialog" aria-modal="true" aria-label="More">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid var(--a-line)" }}>
+          <span className="a-kicker">{isAdmin ? "Admin" : "Account"}</span>
+          <button type="button" className="a-icon-btn sm bare" aria-label="Close" onClick={onClose}>
+            <X size={16} color="var(--a-ink)" />
+          </button>
+        </div>
+        {isAdmin && items.map((item) => {
+          const I = item.icon;
+          return (
+            <Link key={item.href} href={item.href} className="a-sheet-row" onClick={onClose}>
+              <I size={18} />
+              <span style={{ flex: 1 }}>{item.label}</span>
+              <CaretRight size={14} color="var(--a-faint)" />
+            </Link>
+          );
+        })}
+        <button type="button" className="a-sheet-row" style={{ color: "var(--a-danger)" }} onClick={onSignOut}>
+          <SignOut size={18} />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * App frame for every signed-in page: 248px sidebar on desktop, top bar +
+ * five-tab bar with a More sheet below 768px. Pages render inside `.a-main`
+ * and own their scroll area (see `AppPage`).
+ */
+export default function DashboardShell({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { organization, membership } = useOrganization();
+  const isAdmin = membership?.role === "org:admin";
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+
+  const tabs = TABS.filter((t) => !t.admin || isAdmin);
+  const moreActive = MORE_HREFS.some((h) => pathname.startsWith(h));
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", width: "100%", height: "100svh", background: "#FAFAFA", overflow: "hidden" }}>
-      <style>{`
-        .sidenav {
-          width: 210px;
-          min-width: 210px;
-          height: 100%;
-          background: transparent;
-          display: flex;
-          flex-direction: column;
-          flex-shrink: 0;
-          overflow: hidden;
-        }
-        .mobile-topbar { display: none; }
+    <div className="a-root a-app">
+      <SideNav />
 
-        @media (max-width: 768px) {
-          .sidenav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            z-index: 60;
-            width: 240px;
-            min-width: 0;
-            background: #FAFAFA;
-            border-right: 1px solid #EBEBEB;
-            transform: translateX(-100%);
-            transition: transform 240ms cubic-bezier(0.2, 0, 0, 1);
-            box-shadow: none;
-          }
-          .sidenav[data-open="true"] {
-            transform: translateX(0);
-            box-shadow: 8px 0 32px rgba(0,0,0,0.12);
-          }
-          .mobile-topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            height: 56px;
-            padding: 0 16px;
-            background: #fff;
-            border-bottom: 1px solid #EBEBEB;
-            flex-shrink: 0;
-          }
-        }
-      `}</style>
-
-      {/* Mobile backdrop */}
-      {mobileNavOpen && (
-        <div
-          onClick={() => setMobileNavOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.28)",
-            zIndex: 59,
-            backdropFilter: "blur(1px)",
-          }}
-        />
-      )}
-
-      <div style={{ display: "flex", width: "100%", maxWidth: 1100, height: "100%", overflow: "hidden" }}>
-        <SideNav mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
-
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {/* Mobile top bar */}
-          <div className="mobile-topbar">
-            <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-              <Image src="/athena-mind-logo.png" alt="Athena" width={24} height={24} style={{ borderRadius: 4 }} />
-              <span style={{ fontSize: 16, fontWeight: 400, color: "#111", letterSpacing: "-0.02em" }}>Athena</span>
-            </Link>
-            <Button onClick={() => setMobileNavOpen(true)} variant="ghost" size="icon-lg">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </Button>
-          </div>
-
-          {children}
+      <header className="a-m-top">
+        <Link href="/dashboard" className="a-brand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/athena-knot.svg" alt="" />
+          Athena
+        </Link>
+        <div className="org">
+          <span>{organization?.name ?? ""}</span>
+          <span style={{ display: "flex", borderRadius: 8, overflow: "hidden" }}>
+            <OrgLogo src={organization?.hasImage ? organization.imageUrl : null} seed={organization?.id ?? "org"} size={28} />
+          </span>
         </div>
-      </div>
+      </header>
+
+      <main className="a-main">{children}</main>
+
+      <nav className="a-tabbar" aria-label="Primary" style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, 1fr)` }}>
+        {tabs.map((t) => {
+          const active = isNavActive(pathname, t.href);
+          const I = t.icon;
+          return (
+            <Link key={t.href} href={t.href} className="a-tab" aria-current={active ? "page" : undefined}>
+              <span className="pill"><I size={18} weight={active ? "fill" : "regular"} /></span>
+              {t.label}
+            </Link>
+          );
+        })}
+        <button type="button" className="a-tab" aria-current={moreActive ? "page" : undefined} aria-haspopup="dialog" onClick={() => setMoreOpen(true)}>
+          <span className="pill"><DotsThree size={18} weight={moreActive ? "bold" : "regular"} /></span>
+          More
+        </button>
+      </nav>
+
+      <MoreSheet
+        open={moreOpen}
+        isAdmin={isAdmin}
+        onClose={() => setMoreOpen(false)}
+        onSignOut={() => { setMoreOpen(false); setSignOutOpen(true); }}
+      />
+      <SignOutDialog open={signOutOpen} onClose={() => setSignOutOpen(false)} />
+    </div>
+  );
+}
+
+/** Standard scrollable page body: centred 1080px column. */
+export function AppPage({ children, narrow }: { children: ReactNode; narrow?: boolean }) {
+  return (
+    <div className="a-scroll">
+      <div className={`a-wrap${narrow ? " narrow" : ""}`}>{children}</div>
     </div>
   );
 }

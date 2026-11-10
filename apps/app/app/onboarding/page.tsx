@@ -1,61 +1,11 @@
 "use client";
 
 import { useClerk, useOrganization } from "@clerk/nextjs";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/Button";
-import PageFadeIn from "@/components/PageFadeIn";
-
-const inputStyle = (focused: boolean): React.CSSProperties => ({
-  width: "100%",
-  height: 48,
-  borderRadius: "var(--radius-md)",
-  border: `1px solid ${focused ? "var(--foreground)" : "var(--border-strong)"}`,
-  background: "var(--background)",
-  color: "var(--foreground)",
-  fontSize: 15,
-  fontWeight: 400,
-  padding: "0 var(--space-4)",
-  outline: "none",
-  fontFamily: "var(--font-sans)",
-  transition: "border-color 150ms ease-out",
-  boxSizing: "border-box",
-});
-
-function Field({
-  label,
-  hint,
-  optional,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  optional?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
-        <label style={{ fontSize: 13, color: "var(--foreground-muted)", fontFamily: "var(--font-sans)" }}>
-          {label}
-        </label>
-        {optional && (
-          <span style={{ fontSize: 12, color: "var(--foreground-subtle)", fontFamily: "var(--font-sans)" }}>
-            optional
-          </span>
-        )}
-      </div>
-      {children}
-      {hint && (
-        <p style={{ fontSize: 12, color: "var(--foreground-subtle)", fontFamily: "var(--font-sans)", margin: 0 }}>
-          {hint}
-        </p>
-      )}
-    </div>
-  );
-}
+import { ArrowRight, WarningCircle } from "@phosphor-icons/react";
+import { Field } from "@/components/athena/ui";
 
 async function finishOnboarding(body: Record<string, unknown>) {
   const res = await fetch("/api/orgs", {
@@ -128,7 +78,6 @@ export default function OnboardingPage() {
 
   const [orgName, setOrgName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
-  const [focused, setFocused] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -174,108 +123,94 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100svh",
-        background: "var(--background)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "var(--space-8) var(--space-6)",
-      }}
-    >
-      <PageFadeIn
-        style={{
-          width: "100%",
-          maxWidth: 480,
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--space-8)",
-        }}
-      >
-        <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
-          <Image src="/athena-mind-logo.png" alt="Athena" width={36} height={36} />
-          <span style={{ fontSize: 15, letterSpacing: "-0.01em", color: "var(--foreground)" }}>
-            Athena
-          </span>
-        </Link>
-
-        <div
-          style={{
-            background: "var(--surface)",
-            border: "1px solid var(--border-strong)",
-            borderRadius: "var(--radius-lg)",
-            padding: "var(--space-8)",
-          }}
-        >
-          <h1
-            style={{
-              fontSize: 22,
-              letterSpacing: "-0.01em",
-              color: "var(--foreground)",
-              marginBottom: "var(--space-2)",
-              fontFamily: "var(--font-sans)",
-            }}
-          >
-            Set up your organisation
-          </h1>
-          <p
-            style={{
-              fontSize: 14,
-              color: "var(--foreground-muted)",
-              lineHeight: 1.6,
-              marginBottom: "var(--space-8)",
-              fontFamily: "var(--font-sans)",
-            }}
-          >
-            Name your workspace. You can connect sources and upload files once you are in.
+    <div className="a-root a-split">
+      <div className="a-split-form">
+        <div style={{ width: "100%", maxWidth: 400 }}>
+          <Link href="/" className="a-split-brand">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/athena-knot.svg" alt="" width={28} height={28} />
+            <span>Athena</span>
+          </Link>
+          <div className="a-kicker" style={{ marginBottom: 12 }}>Step 1 of 2</div>
+          <h1 className="a-serif a-split-h">Create your organisation</h1>
+          <p className="a-split-p">
+            Your organisation holds your team, your connected sources and your plan. You can change these later in Settings.
           </p>
 
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
-            <Field label="Organisation name">
-              <input
-                type="text"
-                required
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                onFocus={() => setFocused("orgName")}
-                onBlur={() => setFocused(null)}
-                placeholder="Acme Corp"
-                style={inputStyle(focused === "orgName")}
-              />
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 28 }}>
+            <Field label="Organisation name" htmlFor="onb-org">
+              <div className="a-input">
+                <input
+                  id="onb-org"
+                  type="text"
+                  required
+                  autoFocus
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="Acme Corp"
+                />
+              </div>
             </Field>
 
-            <Field label="Logo URL" optional hint="Paste a public image URL. PNG or SVG works best.">
-              <input
-                type="url"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                onFocus={() => setFocused("logo")}
-                onBlur={() => setFocused(null)}
-                placeholder="https://acme.com/logo.png"
-                style={inputStyle(focused === "logo")}
-              />
-            </Field>
+            <div className="a-field">
+              <label className="a-label" htmlFor="onb-logo">
+                Logo URL <span style={{ color: "var(--a-faint)" }}>(optional)</span>
+              </label>
+              <div className="a-input">
+                <input
+                  id="onb-logo"
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://"
+                />
+              </div>
+              <span style={{ fontSize: 12, color: "var(--a-muted)" }}>Paste a public image URL. PNG or SVG works best.</span>
+            </div>
 
             {error && (
-              <p style={{ fontSize: 13, color: "#dc2626", fontFamily: "var(--font-sans)", margin: 0 }}>
-                {error}
-              </p>
+              <div className="a-notice err" role="alert">
+                <WarningCircle size={14} weight="fill" />
+                <span>{error}</span>
+              </div>
             )}
 
-            <Button
+            <button
               type="submit"
+              className="a-btn a-btn-primary a-btn-lg a-btn-block"
+              style={{ marginTop: 8 }}
               disabled={submitting || !orgName.trim()}
-              variant="primary-dark"
-              size="lg"
-              full
             >
               {submitting ? "Creating organisation…" : "Create organisation"}
-            </Button>
+              {!submitting && <ArrowRight size={14} />}
+            </button>
+            <p style={{ fontSize: 12, color: "var(--a-muted)", textAlign: "center" }}>
+              Next, choose a plan. Every plan starts with a 7-day free trial.
+            </p>
           </form>
         </div>
-      </PageFadeIn>
+      </div>
+
+      <div className="a-split-art">
+        <div className="frame">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/dither-temple-blue.webp" alt="Blue-dithered Greek temple" />
+          <div className="a-split-card a-only-d">
+            <div className="a-ac" style={{ padding: "16px 18px" }}>
+              <div className="a-ac-k">Ask Athena</div>
+              <div className="a-ac-q">What is our leave policy for annual leave?</div>
+              <div className="a-ac-k" style={{ marginTop: 14 }}>Answer</div>
+              <div className="a-ac-a">
+                Full-time staff get 21 working days a year. Requests go through the HR portal two weeks ahead and your line manager approves them.
+              </div>
+              <div className="a-ac-chips">
+                <span className="a-chip">Notion · Leave policy</span>
+                <span className="a-chip">Drive · leave_policy.md</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

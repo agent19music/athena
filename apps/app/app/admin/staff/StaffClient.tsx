@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Button } from "../../../components/Button";
+import { useEffect, useMemo, useState } from "react";
+import { useOrganization } from "@clerk/nextjs";
+import { CaretUpDown, PaperPlaneRight, UsersThree } from "@phosphor-icons/react";
+import { Avatar } from "../../../components/athena/Orb";
+import { Badge, Tile } from "../../../components/athena/ui";
 import { Toast } from "../../../components/Toast";
 
 const INVITE_COOLDOWN_SECONDS = 59;
@@ -26,6 +29,7 @@ type Member = {
   email: string;
   name: string;
   joinedAt: string;
+  imageUrl?: string | null;
 };
 
 type PendingInvitation = {
@@ -35,20 +39,45 @@ type PendingInvitation = {
   invitedAt: string;
 };
 
+// Free mail providers never become the "company domain" suffix.
+const FREE_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com",
+  "icloud.com", "me.com", "proton.me", "protonmail.com", "aol.com", "gmx.com",
+]);
+
+/** Most common non-free email domain among current members, if any. */
+function companyDomain(members: Member[]): string | null {
+  const counts = new Map<string, number>();
+  for (const m of members) {
+    const d = m.email.split("@")[1]?.toLowerCase();
+    if (!d || FREE_DOMAINS.has(d)) continue;
+    counts.set(d, (counts.get(d) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let n = 0;
+  for (const [d, c] of counts) if (c > n) { best = d; n = c; }
+  return best;
+}
+
 function InviteForm({
   currentUserEmails,
+  domain,
   onSent,
 }: {
   currentUserEmails: string[];
+  domain: string | null;
   onSent: (email: string) => void;
 }) {
   const [email, setEmail] = useState("");
+  const [useDomain, setUseDomain] = useState(true);
   const [role, setRole] = useState("org:member");
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const [message, setMessage] = useState("");
   const [cooldown, startCooldown] = useCooldown();
 
-  const isSelf = currentUserEmails.includes(email.trim().toLowerCase());
+  const suffixed = !!domain && useDomain;
+  const fullEmail = suffixed ? `${email.trim().replace(/@.*$/, "")}@${domain}` : email.trim();
+  const isSelf = currentUserEmails.includes(fullEmail.toLowerCase());
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +87,7 @@ function InviteForm({
       const res = await fetch("/api/admin/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ email: fullEmail, role }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -77,71 +106,49 @@ function InviteForm({
   }
 
   return (
-    <form onSubmit={send} style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 220 }}>
-        <label style={{ fontSize: 13, color: "#6b6b6b" }}>Email address</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => {
-            setEmail(e.target.value);
-            if (state === "error") setState("idle");
-          }}
-          placeholder="name@company.com"
-          required
-          style={{
-            fontSize: 14,
-            color: "#1a1a1a",
-            background: "#ffffff",
-            border: `1px solid ${isSelf ? "#fecaca" : "#e5e5e5"}`,
-            borderRadius: 8,
-            padding: "9px 14px",
-            outline: "none",
-            width: "100%",
-          }}
-        />
+    <form onSubmit={send}>
+      <div className="a-invite-grid">
+        <div className="a-field">
+          <label className="a-label" htmlFor="invite-email">Email</label>
+          <div className={`a-input${state === "error" || isSelf ? " invalid" : ""}`} style={suffixed ? { paddingRight: 6, gap: 6 } : undefined}>
+            <input
+              id="invite-email"
+              type={suffixed ? "text" : "email"}
+              inputMode="email"
+              autoComplete="off"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); if (state === "error") setState("idle"); }}
+              placeholder={suffixed ? "jane" : "jane@company.com"}
+              required
+            />
+            {suffixed && <span className="a-input-suffix">@{domain}</span>}
+          </div>
+          {domain && (
+            <button type="button" className="a-text-btn" onClick={() => setUseDomain((u) => !u)}>
+              {useDomain ? "Use another email" : `Use @${domain}`}
+            </button>
+          )}
+        </div>
+        <div className="a-field">
+          <label className="a-label" htmlFor="invite-role">Role</label>
+          <div className="a-input" style={{ position: "relative" }}>
+            <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="org:member">Member</option>
+              <option value="org:admin">Admin</option>
+            </select>
+            <CaretUpDown size={14} color="var(--a-muted)" style={{ pointerEvents: "none", flexShrink: 0 }} />
+          </div>
+        </div>
+        <div className="a-field">
+          <span className="a-label a-only-d" style={{ visibility: "hidden" }} aria-hidden="true">Invite</span>
+          <button type="submit" className="a-btn a-btn-primary" style={{ height: 40 }} disabled={!email.trim() || isSelf || state === "loading" || cooldown > 0}>
+            <PaperPlaneRight size={14} />
+            {state === "loading" ? "Sending…" : cooldown > 0 ? `Send again in ${cooldown}s` : "Send invite"}
+          </button>
+        </div>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <label style={{ fontSize: 13, color: "#6b6b6b" }}>Role</label>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
-          style={{
-            fontSize: 14,
-            color: "#1a1a1a",
-            background: "#ffffff",
-            border: "1px solid #e5e5e5",
-            borderRadius: 8,
-            padding: "9px 14px",
-            outline: "none",
-          }}
-        >
-          <option value="org:member">Member</option>
-          <option value="org:admin">Admin</option>
-        </select>
-      </div>
-      {cooldown > 0 ? (
-        <span style={{ fontSize: 12, color: "#a3a3a3", padding: "9px 14px" }}>{cooldown}s</span>
-      ) : (
-        <Button
-          type="submit"
-          disabled={state === "loading" || !email.trim() || isSelf}
-          variant="primary-dark"
-        >
-          {state === "loading" ? "Sending…" : "Send invite"}
-        </Button>
-      )}
-      {isSelf ? (
-        <p style={{ fontSize: 13, color: "#b91c1c", margin: 0, width: "100%" }}>
-          You can&apos;t invite yourself.
-        </p>
-      ) : (
-        message && (
-          <p style={{ fontSize: 13, color: "#e05a5a", margin: 0, width: "100%" }}>
-            {message}
-          </p>
-        )
-      )}
+      {isSelf && <p style={{ fontSize: 12, color: "var(--a-danger)", marginTop: 8 }}>That&apos;s your own email address.</p>}
+      {state === "error" && <p style={{ fontSize: 12, color: "var(--a-danger)", marginTop: 8 }}>{message}</p>}
     </form>
   );
 }
@@ -186,54 +193,25 @@ function ResendButton({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
       {cooldown > 0 ? (
-        <span style={{ fontSize: 12, color: "#a3a3a3" }}>{cooldown}s</span>
+        <span style={{ fontSize: 12, color: "var(--a-muted)" }}>Sent · resend in {cooldown}s</span>
       ) : (
-        <Button variant="secondary" size="sm" onClick={resend} disabled={state === "loading"}>
+        <button type="button" className="a-btn a-btn-secondary a-btn-sm" onClick={resend} disabled={state === "loading"}>
           {state === "loading" ? "Resending…" : "Resend invite"}
-        </Button>
+        </button>
       )}
-      {state === "error" && (
-        <p style={{ fontSize: 12, color: "#e05a5a", margin: 0 }}>{error}</p>
-      )}
+      {state === "error" && <p style={{ fontSize: 12, color: "var(--a-danger)" }}>{error}</p>}
     </div>
   );
 }
 
 function RoleBadge({ role }: { role: string }) {
-  const isAdmin = role === "org:admin";
-  return (
-    <span
-      style={{
-        fontSize: 12,
-        color: isAdmin ? "#1a1a1a" : "#6b6b6b",
-        background: isAdmin ? "#f0f0f0" : "transparent",
-        border: "1px solid #e5e5e5",
-        borderRadius: 9999,
-        padding: "2px 10px",
-      }}
-    >
-      {isAdmin ? "Admin" : "Member"}
-    </span>
-  );
+  return role === "org:admin" ? <Badge tone="ink" dot={false}>Admin</Badge> : <Badge dot={false}>Member</Badge>;
 }
 
 function PendingBadge() {
-  return (
-    <span
-      style={{
-        fontSize: 12,
-        color: "#b45309",
-        background: "#fffbeb",
-        border: "1px solid #fde68a",
-        borderRadius: 9999,
-        padding: "2px 10px",
-      }}
-    >
-      Pending
-    </span>
-  );
+  return <Badge tone="warn">Pending</Badge>;
 }
 
 const STAFF_POLL_MS = 4000;
@@ -247,6 +225,7 @@ export default function StaffClient({
   pendingInvitations: PendingInvitation[];
   currentUserEmails: string[];
 }) {
+  const { organization } = useOrganization();
   const [toast, setToast] = useState<string | null>(null);
   const [members, setMembers] = useState(initialMembers);
   const [pendingInvitations, setPendingInvitations] = useState(initialPendingInvitations);
@@ -276,193 +255,131 @@ export default function StaffClient({
     refreshStaff();
   }
 
-  return (
-    <div>
-      {/* Invite section */}
-      <section style={{ marginBottom: 64 }}>
-        <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 16px 0", letterSpacing: "0.01em" }}>
-          Invite
-        </h2>
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e5e5e5",
-            borderRadius: 8,
-            padding: 32,
-          }}
-        >
-          <p style={{ fontSize: 15, color: "#6b6b6b", margin: "0 0 24px 0", lineHeight: 1.55 }}>
-            Send an invitation to add someone to this organisation.
-          </p>
-          <InviteForm currentUserEmails={currentUserEmails} onSent={announceSent} />
-        </div>
-      </section>
+  const domain = useMemo(() => companyDomain(members), [members]);
+  const isMe = (m: Member) => currentUserEmails.includes(m.email.toLowerCase());
 
-      {/* Pending invites */}
+  return (
+    <>
+      <div className="a-card a-card-pad a-invite" style={{ marginBottom: 32 }}>
+        <div style={{ fontSize: 16, marginBottom: 4 }}>Invite a teammate</div>
+        <div style={{ fontSize: 13, color: "var(--a-muted)", marginBottom: 16 }}>
+          They get an email invite and join {organization?.name ?? "your organisation"} when they sign in.
+        </div>
+        <InviteForm currentUserEmails={currentUserEmails} domain={domain} onSent={announceSent} />
+      </div>
+
       {pendingInvitations.length > 0 && (
-        <section style={{ marginBottom: 64 }}>
-          <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 16px 0", letterSpacing: "0.01em" }}>
-            Pending invites — {pendingInvitations.length}
-          </h2>
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e5e5e5",
-              borderRadius: 8,
-              overflow: "hidden",
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <>
+          <div className="a-sec-t">
+            <h2>Pending invites <span className="a-count">{pendingInvitations.length}</span></h2>
+          </div>
+          <div className="a-card a-clip a-team-block">
+            <table className="a-tbl a-only-d">
               <thead>
-                <tr style={{ borderBottom: "1px solid #e5e5e5" }}>
-                  {["Email", "Role", "Invited", "Status", ""].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: "left",
-                        fontSize: 12,
-                        color: "#a3a3a3",
-                        padding: "12px 24px",
-                        letterSpacing: "0.01em",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
+                <tr>
+                  <th>Email</th>
+                  <th style={{ width: 120 }}>Role</th>
+                  <th style={{ width: 160 }}>Invited</th>
+                  <th style={{ width: 140 }}>Status</th>
+                  <th style={{ width: 180 }} />
                 </tr>
               </thead>
               <tbody>
-                {pendingInvitations.map((invite, i) => (
-                  <tr
-                    key={invite.id}
-                    style={{
-                      borderBottom: i < pendingInvitations.length - 1 ? "1px solid #f0f0f0" : "none",
-                    }}
-                  >
-                    <td style={{ fontSize: 14, color: "#1a1a1a", padding: "16px 24px" }}>
-                      {invite.email}
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <RoleBadge role={invite.role} />
-                    </td>
-                    <td style={{ fontSize: 14, color: "#a3a3a3", padding: "16px 24px" }}>
-                      {invite.invitedAt}
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <PendingBadge />
-                    </td>
-                    <td style={{ padding: "16px 24px", textAlign: "right" }}>
-                      <ResendButton invitation={invite} onSent={announceSent} />
-                    </td>
+                {pendingInvitations.map((inv) => (
+                  <tr key={inv.id}>
+                    <td className="a-ellipsis" title={inv.email}>{inv.email}</td>
+                    <td><RoleBadge role={inv.role} /></td>
+                    <td className="muted">{inv.invitedAt}</td>
+                    <td><PendingBadge /></td>
+                    <td style={{ textAlign: "right" }}><ResendButton invitation={inv} onSent={announceSent} /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <div className="a-only-m a-divide">
+              {pendingInvitations.map((inv) => (
+                <div key={inv.id} style={{ padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="a-ellipsis" style={{ flex: 1, fontSize: 14 }}>{inv.email}</span>
+                    <PendingBadge />
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                    <span style={{ fontSize: 12, color: "var(--a-muted)", flex: 1 }}>
+                      {inv.role === "org:admin" ? "Admin" : "Member"} · Invited {inv.invitedAt}
+                    </span>
+                    <ResendButton invitation={inv} onSent={announceSent} />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </section>
+        </>
       )}
 
-      {/* Members table */}
-      <section style={{ marginBottom: 64 }}>
-        <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 16px 0", letterSpacing: "0.01em" }}>
-          Members — {members.length}
-        </h2>
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e5e5e5",
-            borderRadius: 8,
-            overflow: "hidden",
-          }}
-        >
-          {members.length === 0 ? (
-            <p style={{ fontSize: 15, color: "#a3a3a3", padding: 32, margin: 0 }}>
-              No members yet.
-            </p>
-          ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <div className="a-sec-t">
+        <h2>Members <span className="a-count">{members.length}</span></h2>
+      </div>
+      <div className="a-card a-clip a-team-block">
+        {members.length === 0 ? (
+          <p style={{ padding: 20, fontSize: 14, color: "var(--a-muted)" }}>No members yet.</p>
+        ) : (
+          <>
+            <table className="a-tbl a-only-d">
               <thead>
-                <tr style={{ borderBottom: "1px solid #e5e5e5" }}>
-                  {["Name", "Email", "Role", "Joined"].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: "left",
-                        fontSize: 12,
-                        color: "#a3a3a3",
-                        padding: "12px 24px",
-                        letterSpacing: "0.01em",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th style={{ width: 120 }}>Role</th>
+                  <th style={{ width: 160 }}>Joined</th>
                 </tr>
               </thead>
               <tbody>
-                {members.map((m, i) => (
-                  <tr
-                    key={m.id}
-                    style={{
-                      borderBottom: i < members.length - 1 ? "1px solid #f0f0f0" : "none",
-                    }}
-                  >
-                    <td style={{ fontSize: 14, color: "#1a1a1a", padding: "16px 24px" }}>
-                      {m.name || "—"}
+                {members.map((m) => (
+                  <tr key={m.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                        <Avatar src={m.imageUrl} seed={m.email || m.id} size={28} alt={m.name} />
+                        <span className="a-ellipsis">{m.name || m.email}</span>
+                        {isMe(m) && <span style={{ fontSize: 12, color: "var(--a-muted)" }}>You</span>}
+                      </div>
                     </td>
-                    <td style={{ fontSize: 14, color: "#6b6b6b", padding: "16px 24px" }}>
-                      {m.email}
-                    </td>
-                    <td style={{ padding: "16px 24px" }}>
-                      <RoleBadge role={m.role} />
-                    </td>
-                    <td style={{ fontSize: 14, color: "#a3a3a3", padding: "16px 24px" }}>
-                      {m.joinedAt}
-                    </td>
+                    <td className="muted a-ellipsis" title={m.email}>{m.email}</td>
+                    <td><RoleBadge role={m.role} /></td>
+                    <td className="muted">{m.joinedAt}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-      </section>
+            <div className="a-only-m a-divide">
+              {members.map((m) => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px" }}>
+                  <Avatar src={m.imageUrl} seed={m.email || m.id} size={32} alt={m.name} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14 }}>{m.name || m.email}{isMe(m) && <span style={{ fontSize: 12, color: "var(--a-muted)" }}> · You</span>}</div>
+                    <div className="a-ellipsis" style={{ fontSize: 12, color: "var(--a-muted)" }}>{m.email}</div>
+                  </div>
+                  <RoleBadge role={m.role} />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
-      {/* Staff directory note */}
-      <section>
-        <h2 style={{ fontSize: 13, color: "#a3a3a3", margin: "0 0 16px 0", letterSpacing: "0.01em" }}>
-          Staff directory
-        </h2>
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e5e5e5",
-            borderRadius: 8,
-            padding: 32,
-          }}
-        >
-          <p style={{ fontSize: 15, color: "#6b6b6b", margin: "0 0 8px 0", lineHeight: 1.55 }}>
-            The staff directory is a JSON file used as a fallback when Athena cannot find a
-            relevant document. It contains contact info — name, role, department, email.
-          </p>
-          <p style={{ fontSize: 13, color: "#a3a3a3", margin: 0 }}>
-            Bulk upload via UI coming soon. For now, edit{" "}
-            <code
-              style={{
-                fontFamily: "monospace",
-                fontSize: 12,
-                background: "#f5f5f5",
-                padding: "1px 6px",
-                borderRadius: 4,
-              }}
-            >
-              backend/staff_directory.json
-            </code>{" "}
-            directly.
+      <div className="a-card a-staffdir">
+        <Tile><UsersThree size={16} /></Tile>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 14 }}>Staff directory</span>
+            <Badge dot={false}>Coming soon</Badge>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--a-muted)", lineHeight: 1.55, marginTop: 4 }}>
+            When Athena can&apos;t find an answer in your docs, it suggests the right teammate to ask. You&apos;ll be able to edit names, roles and departments here. Until then, contact support to update the directory.
           </p>
         </div>
-      </section>
+      </div>
 
-      <Toast message={toast} onDismiss={() => setToast(null)} />
-    </div>
+      <Toast message={toast} onDismiss={() => setToast(null)} tone="success" />
+    </>
   );
 }

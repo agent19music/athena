@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import DashboardShell from "../../../components/DashboardShell";
-import PageFadeIn from "../../../components/PageFadeIn";
-import ConnectionsClient from "./ConnectionsClient";
+import DashboardShell, { AppPage } from "../../../components/DashboardShell";
+import { PageHeader } from "../../../components/athena/ui";
+import ConnectionsClient, { SyncButton } from "./ConnectionsClient";
 
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:8000";
 
@@ -76,24 +76,20 @@ export default async function ConnectionsPage() {
 
   return (
     <DashboardShell>
-      <main style={{ flex: 1, overflowY: "auto", background: "#FAFAFA" }}>
-        <PageFadeIn style={{ maxWidth: 880, margin: "0 auto", padding: "56px 48px 80px" }}>
-          <div style={{ marginBottom: 40 }}>
-            <h1 style={{ fontSize: 32, fontWeight: 400, letterSpacing: "-0.025em", color: "#111", lineHeight: 1.2, margin: 0 }}>
-              Connections
-            </h1>
-            <p style={{ fontSize: 14, color: "#888", marginTop: 8, lineHeight: 1.6 }}>
-              Manage knowledge sources. Connected services are automatically re-indexed on sync.
-            </p>
-          </div>
-          <ConnectionsClient
-            stats={stats}
-            jobs={jobs}
-            notifiedIntegrations={notifiedIntegrations}
-            connectors={connectors}
-          />
-        </PageFadeIn>
-      </main>
+      <AppPage>
+        <PageHeader
+          title="Connections"
+          sub="Manage knowledge sources. Connected services are re-indexed each time you sync."
+          hideActionsOnMobile
+          actions={(stats?.source_types?.length ?? 0) > 0 ? <SyncButton label="Sync all sources" variant="primary" size="md" /> : undefined}
+        />
+        <ConnectionsClient
+          stats={stats}
+          jobs={jobs}
+          notifiedIntegrations={notifiedIntegrations}
+          connectors={connectors}
+        />
+      </AppPage>
     </DashboardShell>
   );
 }

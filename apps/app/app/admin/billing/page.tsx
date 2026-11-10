@@ -66,6 +66,7 @@ export default async function BillingPage() {
   }
 
   let entitlement: BillingEntitlement = { ...FALLBACK, members: 1 };
+  let orgName: string | null = null;
 
   try {
     const token = await getToken();
@@ -96,6 +97,7 @@ export default async function BillingPage() {
       limit: 100,
     });
     const clerkCount = memberships.totalCount ?? memberships.data.length;
+    orgName = memberships.data[0]?.organization?.name ?? null;
     if (clerkCount > 0) {
       entitlement = { ...entitlement, members: clerkCount };
     }
@@ -106,6 +108,7 @@ export default async function BillingPage() {
   return (
     <BillingClient
       initial={entitlement}
+      orgName={orgName}
       countryCode={countryCode}
       customerEmail={customerEmail}
     />

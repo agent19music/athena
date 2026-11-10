@@ -1,10 +1,11 @@
 "use client";
 
-import Image from "next/image";
+import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Button } from "@/components/Button";
+import { useEffect, useRef, useState } from "react";
+import { ArrowsClockwise, Bell, Check, DotsThree, WarningCircle, X } from "@phosphor-icons/react";
+import { Badge, type BadgeTone } from "@/components/athena/ui";
 import { userFacingError } from "@/lib/userFacingError";
 import type { ConnectorState } from "./page";
 
@@ -74,26 +75,19 @@ type Connection = {
   logo: React.ReactNode;
 };
 
-const NotionLogo = () => (
-  <svg width="22" height="22" viewBox="0 0 100 100" fill="none">
-    <path d="M6.017 4.313l55.333-4.087c6.797-.583 8.543-.19 12.817 2.917l17.663 12.443c2.913 2.14 3.883 2.723 3.883 5.053v68.243c0 4.277-1.553 6.807-6.99 7.193L24.467 99.967c-4.08.193-6.023-.39-8.16-3.113L3.3 79.94c-2.333-3.113-3.3-5.443-3.3-8.167V11.113c0-3.497 1.553-6.413 6.017-6.8z" fill="#fff"/>
-    <path fillRule="evenodd" clipRule="evenodd" d="M61.35.227l-55.333 4.087C1.553 4.7 0 7.617 0 11.113v60.66c0 2.723.967 5.053 3.3 8.167l13.007 16.913c2.137 2.723 4.08 3.307 8.16 3.113l64.257-3.89c5.433-.387 6.99-2.917 6.99-7.193V20.64c0-2.21-.873-2.847-3.443-4.733L74.167 3.143c-4.273-3.107-6.02-3.5-12.817-2.917zM25.92 19.523c-5.247.353-6.437.433-9.417-1.99L8.927 11.507c-.77-.78-.383-1.753 1.557-1.947l53.193-3.887c4.467-.39 6.793 1.167 8.54 2.527l9.123 6.61c.39.197 1.36 1.36.193 1.36l-54.93 3.307-.683.047zM19.803 88.3V30.367c0-2.53.777-3.697 3.103-3.893L86 22.78c2.14-.193 3.107 1.167 3.107 3.693v57.547c0 2.53-.39 4.67-3.883 4.863l-60.377 3.5c-3.493.193-5.043-.97-5.043-4.083zm59.6-54.827c.387 1.75 0 3.5-1.75 3.7l-2.91.577v42.773c-2.527 1.36-4.853 2.137-6.797 2.137-3.107 0-3.883-.973-6.21-3.887l-19.03-29.94v28.967l6.077 1.36s0 3.5-4.853 3.5l-13.39.777c-.39-.78 0-2.723 1.357-3.11l3.497-.97v-38.3L30.48 40.667c-.39-1.75.58-4.277 3.3-4.473l14.367-.967 19.8 30.327v-26.83l-5.047-.58c-.39-2.143 1.163-3.7 3.103-3.89l13.4-.78z" fill="#000"/>
-  </svg>
-);
+// eslint-disable-next-line @next/next/no-img-element
+const Logo = ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} style={{ width: 20, height: 20, objectFit: "contain", display: "block" }} />;
 
-
-
-
-const STATUS_CONFIG: Record<Status, { label: string; dot: string; bg: string; text: string }> = {
-  connected: { label: "Connected", dot: "#22c55e", bg: "#f0fdf4", text: "#15803d" },
-  syncing: { label: "Syncing", dot: "#3b82f6", bg: "#eff6ff", text: "#1d4ed8" },
+const STATUS_CONFIG: Record<Status, { label: string; tone: BadgeTone }> = {
+  connected: { label: "Connected", tone: "ok" },
+  syncing: { label: "Syncing", tone: "warn" },
   // "Partial" now means only one thing: credentials are stored but the run
   // indexed nothing (bad key, empty form, revoked access). A connector with no
   // credentials is "Not connected".
-  partial: { label: "Nothing indexed", dot: "#f59e0b", bg: "#fffbeb", text: "#b45309" },
-  error: { label: "Last sync failed", dot: "#ef4444", bg: "#fef2f2", text: "#b91c1c" },
-  disconnected: { label: "Not connected", dot: "#d1d5db", bg: "#f9fafb", text: "#6b7280" },
-  soon: { label: "Coming soon", dot: "#c4b5fd", bg: "#f5f3ff", text: "#7c3aed" },
+  partial: { label: "Nothing indexed", tone: "warn" },
+  error: { label: "Last sync failed", tone: "err" },
+  disconnected: { label: "Not connected", tone: "neutral" },
+  soon: { label: "Coming soon", tone: "neutral" },
 };
 
 // Row order: anything already wired up (even if its last run had trouble)
@@ -121,9 +115,9 @@ function relativeTime(iso: string | null): string {
   return `${days}d ago`;
 }
 
-// A shared button that hits the real /api/admin/sync route and refreshes server
-// data so the status/chunk-count reflect the new run.
-function SyncButton({ body, label = "Sync now" }: { body?: Record<string, unknown>; label?: string }) {
+// Hits the real /api/admin/sync route, waits for the run, then refreshes
+// server data so the status/chunk-count reflect the new run.
+function useSync(body?: Record<string, unknown>) {
   const router = useRouter();
   const [state, setState] = useState<"idle" | "syncing" | "done" | "error">("idle");
 
@@ -151,21 +145,74 @@ function SyncButton({ body, label = "Sync now" }: { body?: Record<string, unknow
       setTimeout(() => setState("idle"), 4000);
     }
   }
+  return { state, sync };
+}
 
-  const text =
-    state === "syncing" ? "Syncing…" : state === "done" ? "✓ Done" : state === "error" ? "Retry" : label;
-
+export function SyncButton({
+  body,
+  label = "Sync now",
+  variant = "secondary",
+  size = "sm",
+}: {
+  body?: Record<string, unknown>;
+  label?: string;
+  variant?: "primary" | "secondary";
+  size?: "sm" | "md";
+}) {
+  const { state, sync } = useSync(body);
+  const text = state === "syncing" ? "Syncing…" : state === "done" ? "Done" : state === "error" ? "Retry" : label;
   return (
-    <Button
+    <button
+      type="button"
       onClick={sync}
       disabled={state === "syncing"}
-      variant={state === "error" ? "destructive" : "primary-dark"}
-      size="sm"
-      className="tooltip tooltip-end"
-      data-tooltip="Trigger manual sync instantly"
+      className={`a-btn ${state === "error" ? "a-btn-danger-quiet" : `a-btn-${variant}`}${size === "sm" ? " a-btn-sm" : ""}`}
+      title="Trigger a manual sync now"
     >
+      {state === "done" ? <Check size={14} /> : <ArrowsClockwise size={14} className={state === "syncing" ? "a-spin" : undefined} />}
       {text}
-    </Button>
+    </button>
+  );
+}
+
+type MenuItem = { label: string; href?: string; onClick?: () => void; hint?: string };
+
+// "More actions" popover on a source row.
+function MoreMenu({ items }: { items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  if (items.length === 0) return null;
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" className="a-icon-btn sm" aria-label="More actions" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <DotsThree size={16} />
+      </button>
+      {open && (
+        <div className="a-menu" role="menu">
+          {items.map((it) =>
+            it.href ? (
+              <a key={it.label} role="menuitem" href={it.href} onClick={() => setOpen(false)}>
+                <span>{it.label}</span>
+                {it.hint && <small>{it.hint}</small>}
+              </a>
+            ) : (
+              <button key={it.label} type="button" role="menuitem" onClick={() => { setOpen(false); it.onClick?.(); }}>
+                <span>{it.label}</span>
+                {it.hint && <small>{it.hint}</small>}
+              </button>
+            ),
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -374,68 +421,22 @@ function ConnectorModal({
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-        backdropFilter: "blur(2px)",
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={spec.title}
-        style={{
-          background: "#fff",
-          borderRadius: 16,
-          width: 480,
-          maxWidth: "calc(100vw - 32px)",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)",
-          overflow: "hidden",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "24px 28px 20px",
-            borderBottom: "1px solid #F0F0F0",
-          }}
-        >
-          <h2 style={{ fontSize: 20, fontWeight: 400, letterSpacing: "-0.02em", color: "#111", margin: 0 }}>
-            {spec.title}
-          </h2>
-          <Button
-            onClick={onClose}
-            aria-label="Close"
-            variant="ghost"
-            size="icon-lg"
-            style={{ fontSize: 20, color: "#ccc", lineHeight: 1 }}
-          >
-            ×
-          </Button>
+    <div className="a-scrim a-root" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label={spec.title} className="a-dialog" style={{ width: 480, padding: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "1px solid var(--a-line)" }}>
+          <h2 style={{ fontSize: 18, fontWeight: 400, margin: 0 }}>{spec.title}</h2>
+          <button type="button" className="a-icon-btn sm bare" aria-label="Close" onClick={onClose}>
+            <X size={16} color="var(--a-ink)" />
+          </button>
         </div>
 
-        <div style={{ padding: "20px 28px 24px" }}>
-          <p style={{ fontSize: 13.5, color: "#888", lineHeight: 1.6, margin: "0 0 20px" }}>
+        <div style={{ padding: "20px 24px 24px" }}>
+          <p style={{ fontSize: 14, color: "var(--a-muted)", lineHeight: 1.55, margin: "0 0 20px" }}>
             {spec.blurb}
             {spec.docs && (
               <>
                 {" "}
-                <a
-                  href={spec.docs}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: "#2563EB", textDecoration: "none" }}
-                >
+                <a href={spec.docs} target="_blank" rel="noreferrer" style={{ color: "var(--a-ink)", borderBottom: "1px solid var(--a-line2)" }}>
                   Where do I find this?
                 </a>
               </>
@@ -443,83 +444,57 @@ function ConnectorModal({
           </p>
 
           {configured && (
-            <p className="notice notice-warning" style={{ margin: "0 0 20px" }}>
-              Already connected. Saving replaces the stored credentials and re-indexes.
-            </p>
+            <div className="a-notice" style={{ marginBottom: 20 }}>
+              <WarningCircle size={14} weight="fill" />
+              <span>Already connected. Saving replaces the stored credentials and re-indexes.</span>
+            </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {connectorId === "notion" && notionPages.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label htmlFor="notion_page_picker" style={{ fontSize: 13, color: "#444" }}>
-                  Pages shared with Athena
-                </label>
-                <select
-                  id="notion_page_picker"
-                  value={values.notion_root_page_id ?? ""}
-                  onChange={(e) =>
-                    setValues((v) => ({ ...v, notion_root_page_id: e.target.value }))
-                  }
-                  style={{
-                    fontSize: 13.5,
-                    color: "#111",
-                    background: "#fff",
-                    border: "1px solid #E2E2E2",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                  }}
-                >
-                  <option value="">Select a root page…</option>
-                  {notionPages.map((page) => (
-                    <option key={page.id} value={page.id}>
-                      {page.title}
-                    </option>
-                  ))}
-                </select>
+              <div className="a-field">
+                <label className="a-label" htmlFor="notion_page_picker">Pages shared with Athena</label>
+                <div className="a-input">
+                  <select
+                    id="notion_page_picker"
+                    value={values.notion_root_page_id ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, notion_root_page_id: e.target.value }))}
+                  >
+                    <option value="">Select a root page…</option>
+                    {notionPages.map((page) => (
+                      <option key={page.id} value={page.id}>{page.title}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
             {spec.fields.map((f) => (
-              <div key={f.key} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label htmlFor={f.key} style={{ fontSize: 13, color: "#444" }}>
-                  {f.label}
-                </label>
-                <input
-                  id={f.key}
-                  type={f.secret ? "password" : "text"}
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                  placeholder={f.placeholder}
-                  autoComplete="off"
-                  style={{
-                    fontSize: 13.5,
-                    color: "#111",
-                    background: "#fff",
-                    border: "1px solid #E2E2E2",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    outline: "none",
-                    width: "100%",
-                    transition: "border-color 150ms",
-                  }}
-                  onFocus={(e) => (e.target.style.borderColor = "#111")}
-                  onBlur={(e) => (e.target.style.borderColor = "#E2E2E2")}
-                />
-                <span style={{ fontSize: 12, color: "#aaa", lineHeight: 1.5 }}>{f.hint}</span>
+              <div key={f.key} className="a-field">
+                <label className="a-label" htmlFor={f.key}>{f.label}</label>
+                <div className="a-input">
+                  <input
+                    id={f.key}
+                    type={f.secret ? "password" : "text"}
+                    value={values[f.key] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    autoComplete="off"
+                  />
+                </div>
+                <span style={{ fontSize: 12, color: "var(--a-muted)", lineHeight: 1.5 }}>{f.hint}</span>
               </div>
             ))}
           </div>
 
-          {error && (
-            <p style={{ fontSize: 12.5, color: "#b91c1c", margin: "16px 0 0", lineHeight: 1.5 }}>{error}</p>
-          )}
+          {error && <p style={{ fontSize: 13, color: "var(--a-danger)", margin: "16px 0 0", lineHeight: 1.5 }}>{error}</p>}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
-            <Button onClick={onClose} variant="ghost">
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 24 }}>
+            <button type="button" className="a-btn a-btn-secondary" onClick={onClose}>
               {state === "syncing" ? "Close and keep syncing" : "Cancel"}
-            </Button>
-            <Button onClick={save} disabled={!ready || busy} variant="primary-dark">
+            </button>
+            <button type="button" className="a-btn a-btn-primary" onClick={save} disabled={!ready || busy}>
               {state === "saving" ? "Saving…" : state === "syncing" ? "Indexing…" : "Save and sync"}
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -557,46 +532,18 @@ function NotifyButton({ integration, initiallyNotified }: { integration: string;
   }
 
   const label =
-    state === "loading" ? "Saving…" : state === "done" ? "✓ Noted" : state === "error" ? "Retry" : "Notify me";
+    state === "loading" ? "Saving…" : state === "done" ? "Noted" : state === "error" ? "Retry" : "Notify me";
 
   return (
-    <Button
+    <button
+      type="button"
       onClick={notify}
       disabled={state === "loading" || state === "done"}
-      variant={state === "error" ? "destructive" : "accent-solid"}
-      size="sm"
+      className={`a-btn a-btn-sm ${state === "error" ? "a-btn-danger-quiet" : "a-btn-secondary"}`}
     >
+      {state === "done" ? <Check size={14} /> : <Bell size={14} />}
       {label}
-    </Button>
-  );
-}
-
-// Opens the connector's setup modal. Styled to match the plain action links it
-// replaced, so the row layout stays a single button per connector. Once a
-// connector already has credentials, re-opening this modal replaces them —
-// destructive styling plus a tooltip make that consequence visible before the
-// click, instead of only inside the modal's warning copy.
-function ConfigureButton({
-  label,
-  destructive,
-  tooltip,
-  onClick,
-}: {
-  label: string;
-  destructive?: boolean;
-  tooltip?: string;
-  onClick: () => void;
-}) {
-  return (
-    <Button
-      onClick={onClick}
-      variant={destructive ? "destructive" : "primary-dark"}
-      size="sm"
-      className={tooltip ? "tooltip tooltip-end" : undefined}
-      data-tooltip={tooltip}
-    >
-      {label}
-    </Button>
+    </button>
   );
 }
 
@@ -684,7 +631,9 @@ export default function ConnectionsClient({
       name: "Notion",
       description: "Sync pages and databases from your Notion workspace.",
       status: stateFor("notion").status,
-      meta: metaFor(
+      meta: stateFor("notion").status === "connected" && stateFor("notion").workspace_name
+        ? `Workspace · ${stateFor("notion").workspace_name}`
+        : metaFor(
         "notion",
         stateFor("notion").oauth && !stateFor("notion").has_root
           ? "Notion authorized · pick a root page to finish setup"
@@ -706,17 +655,17 @@ export default function ConnectionsClient({
       syncable: Boolean(
         stateFor("notion").configured && (stateFor("notion").has_root ?? true),
       ),
-      logo: <NotionLogo />,
+      logo: <Logo src="/icons/notion.svg" alt="Notion" />,
     },
     {
       id: "gdocs",
       name: "Google Docs",
-      description: "Index public Google Docs shared with your workspace.",
+      description: "Index Google Docs shared with your workspace.",
       status: stateFor("google_docs").status,
       meta: metaFor("google_docs", "Not set up · no auth required, just share the doc"),
       actionLabel: "Manage docs",
       syncable: stateFor("google_docs").configured,
-      logo: <Image src="/icons/google-docs.png" alt="Google Docs" width={22} height={22} />,
+      logo: <Logo src="/icons/google-docs.png" alt="Google Docs" />,
     },
     {
       id: "tally",
@@ -742,14 +691,14 @@ export default function ConnectionsClient({
       syncable: Boolean(
         stateFor("tally").configured && (stateFor("tally").has_forms ?? true),
       ),
-      logo: <Image src="/icons/tally.svg" alt="Tally" width={22} height={22} />,
+      logo: <Logo src="/icons/tally.svg" alt="Tally" />,
     },
     {
       id: "drive",
       name: "Google Drive",
       description: driveAllowed
-        ? "Full Drive folder sync via service account connector."
-        : "Pro and Plus — full Drive folder sync via service account connector.",
+        ? "Full Drive folder sync through a service account connector."
+        : "Pro and Advanced: full Drive folder sync through a service account connector.",
       status: driveAllowed ? stateFor("drive").status : "disconnected",
       // Drive's chunks are tagged "google_docs" by its loader, so indexed
       // volume isn't attributable to it — hence no chunk count here.
@@ -757,7 +706,7 @@ export default function ConnectionsClient({
         ? "Upgrade on Billing to unlock Google Drive"
         : stateFor("drive").configured
           ? "Folder configured · shares indexed volume with Google Docs"
-          : "Not set up · share a folder with the service account, then add its id",
+          : "Share a folder with the service account, then add its id",
       actionLabel: !driveAllowed
         ? "Upgrade"
         : stateFor("drive").configured
@@ -765,27 +714,27 @@ export default function ConnectionsClient({
           : "Set up",
       actionHref: !driveAllowed ? "/admin/billing" : undefined,
       syncable: driveAllowed && stateFor("drive").configured,
-      logo: <Image src="/icons/google-drive.svg" alt="Google Drive" width={22} height={22} />,
+      logo: <Logo src="/icons/google-drive.svg" alt="Google Drive" />,
     },
     {
       id: "slack",
       name: "Slack",
       description: "Get Athena answers directly in Slack channels.",
       status: "soon",
-      meta: "Planned · Q3 2025",
+      meta: "Planned",
       actionLabel: "Notify me",
       syncable: false,
-      logo: <Image src="/icons/slack_icon.svg" alt="Slack" width={32} height={32} />,
+      logo: <Logo src="/icons/slack_icon.svg" alt="Slack" />,
     },
     {
       id: "confluence",
       name: "Confluence",
       description: "Index Confluence spaces and pages as knowledge.",
       status: "soon",
-      meta: "Planned · Q4 2025",
+      meta: "Planned",
       actionLabel: "Notify me",
       syncable: false,
-      logo: <Image src="/icons/atlassian_confluence.svg" alt="Confluence" width={22} height={22} />,
+      logo: <Logo src="/icons/atlassian_confluence.svg" alt="Confluence" />,
     },
   ];
 
@@ -806,238 +755,152 @@ export default function ConnectionsClient({
     return () => clearInterval(id);
   }, [anySyncing, router]);
 
+  const planName = stats?.plan ? stats.plan.charAt(0).toUpperCase() + stats.plan.slice(1) : null;
+  const sourceLimit = stats?.limits?.source_types;
+  const usedSources = stats?.source_types?.length ?? 0;
+
+  const summary = [
+    { label: "Chunks indexed", value: stats ? stats.chunk_count.toLocaleString() : "—" },
+    { label: "Sources", value: String(usedSources) },
+    { label: "Last synced", value: lastSynced ? relativeTime(lastSynced) : "Never" },
+    {
+      label: "Last run",
+      value: latestJob
+        ? latestJob.status === "running"
+          ? "In progress"
+          : latestJob.status === "failed"
+            ? "Failed"
+            : "Completed"
+        : "No runs yet",
+    },
+  ];
+
+  function actionsFor(conn: Connection) {
+    if (conn.status === "syncing") {
+      // A job is running for this org. Configure/Sync are hidden rather than
+      // just disabled, so there's nothing to click while indexing is in flight.
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--a-muted)" }}>
+          <ArrowsClockwise size={14} className="a-spin" />
+          Syncing…
+        </span>
+      );
+    }
+    if (conn.status === "soon") {
+      return <NotifyButton integration={conn.id} initiallyNotified={notifiedIntegrations.includes(conn.id)} />;
+    }
+    if (conn.actionHref) {
+      return (
+        <Link href={conn.actionHref} className="a-btn a-btn-secondary a-btn-sm">
+          {conn.actionLabel}
+        </Link>
+      );
+    }
+
+    const canConfigure = !!CONNECTOR_FIELDS[conn.id];
+    const configure = () => setConfiguring(conn.id);
+    const menu: MenuItem[] = [];
+
+    if (conn.syncable) {
+      if (conn.oauthHref) menu.push({ label: conn.oauthLabel ?? "Reconnect", href: conn.oauthHref });
+      if (canConfigure && conn.id !== "gdocs") menu.push({ label: conn.actionLabel, hint: "Replaces the current setup and re-indexes", onClick: configure });
+      return (
+        <>
+          {conn.id === "gdocs" && canConfigure ? (
+            <button type="button" className="a-btn a-btn-secondary a-btn-sm" onClick={configure}>{conn.actionLabel}</button>
+          ) : (
+            <SyncButton />
+          )}
+          <MoreMenu items={conn.id === "gdocs" ? [{ label: "Sync now", onClick: () => syncAll() }] : menu} />
+        </>
+      );
+    }
+
+    // Not yet syncable: lead with the one action that finishes setup.
+    const needsPick = conn.actionLabel === "Pick root page" || conn.actionLabel === "Add form ids";
+    if (conn.oauthHref && !needsPick) {
+      if (canConfigure) menu.push({ label: conn.actionLabel, onClick: configure });
+      return (
+        <>
+          <a href={conn.oauthHref} className="a-btn a-btn-primary a-btn-sm">{conn.oauthLabel ?? "Connect"}</a>
+          <MoreMenu items={menu} />
+        </>
+      );
+    }
+    if (canConfigure) {
+      return (
+        <button type="button" className="a-btn a-btn-primary a-btn-sm" onClick={configure}>
+          {conn.id === "drive" && conn.actionLabel === "Set up" ? "Set up Drive" : conn.actionLabel}
+        </button>
+      );
+    }
+    return null;
+  }
+
+  async function syncAll() {
+    try {
+      await fetch("/api/admin/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    } finally {
+      router.refresh();
+    }
+  }
+
   return (
     <>
-      {/* Live summary — real backend data, replaces the old hardcoded meta */}
-      <div
-        style={{
-          display: "flex",
-          gap: 32,
-          padding: "16px 24px",
-          marginBottom: 20,
-          background: "#fff",
-          border: "1px solid #E8E8E8",
-          borderRadius: 12,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-        }}
-      >
-        {[
-          { label: "Chunks indexed", value: stats ? stats.chunk_count.toLocaleString() : "—" },
-          { label: "Sources", value: String(stats?.source_types?.length ?? 0) },
-          { label: "Last synced", value: relativeTime(lastSynced) },
-          {
-            label: "Last run",
-            value: latestJob
-              ? latestJob.status === "running"
-                ? "In progress"
-                : latestJob.status === "failed"
-                  ? "Failed"
-                  : `${latestJob.chunks} chunks`
-              : "No runs yet",
-          },
-        ].map((s) => (
-          <div key={s.label} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 12, color: "#aaa" }}>{s.label}</span>
-            <span style={{ fontSize: 18, color: "#111", fontWeight: 400, letterSpacing: "-0.01em" }}>{s.value}</span>
+      <div className="a-card a-clip a-statstrip mb" style={{ marginBottom: 32 }}>
+        {summary.map((s) => (
+          <div key={s.label}>
+            <div className="l">{s.label}</div>
+            <div className="v a-serif">{s.value}</div>
           </div>
         ))}
       </div>
 
-      {latestJob?.status === "failed" &&
-        latestJob.error &&
-        dismissedJobErrorId !== latestJob.id && (
-        <div
-          className="notice notice-danger"
-          style={{
-            marginBottom: 20,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-            justifyContent: "space-between",
-          }}
-          role="alert"
-        >
-          <span
-            style={{
-              flex: 1,
-              minWidth: 0,
-              overflow: "hidden",
-              display: "-webkit-box",
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: "vertical",
-            }}
-          >
-            {userFacingError(latestJob.error, "The last sync failed. Try again.")}
-          </span>
-          <button
-            type="button"
-            aria-label="Dismiss error"
-            onClick={() => setDismissedJobErrorId(latestJob.id)}
-            style={{
-              flexShrink: 0,
-              border: "none",
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: 18,
-              lineHeight: 1,
-              padding: "0 2px",
-              opacity: 0.7,
-            }}
-          >
-            ×
+      {latestJob?.status === "failed" && latestJob.error && dismissedJobErrorId !== latestJob.id && (
+        <div className="a-notice err" style={{ marginBottom: 16 }} role="alert">
+          <WarningCircle size={14} weight="fill" />
+          <span style={{ flex: 1, minWidth: 0 }}>{userFacingError(latestJob.error, "The last sync failed. Try again.")}</span>
+          <button type="button" aria-label="Dismiss error" onClick={() => setDismissedJobErrorId(latestJob.id)} style={{ background: "none", border: 0, color: "inherit", cursor: "pointer", display: "flex", padding: 2 }}>
+            <X size={14} />
           </button>
         </div>
       )}
 
       {banner && (
-        <div
-          className="notice notice-info"
-          style={{
-            margin: "0 0 16px",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-            justifyContent: "space-between",
-          }}
-          role="status"
-        >
+        <div className="a-notice ok" style={{ marginBottom: 16 }} role="status">
+          <Check size={14} />
           <span style={{ flex: 1, minWidth: 0 }}>{banner}</span>
-          <button
-            type="button"
-            aria-label="Dismiss notice"
-            onClick={() => setBanner(null)}
-            style={{
-              flexShrink: 0,
-              border: "none",
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: 18,
-              lineHeight: 1,
-              padding: "0 2px",
-              opacity: 0.7,
-            }}
-          >
-            ×
+          <button type="button" aria-label="Dismiss notice" onClick={() => setBanner(null)} style={{ background: "none", border: 0, color: "inherit", cursor: "pointer", display: "flex", padding: 2 }}>
+            <X size={14} />
           </button>
         </div>
       )}
 
-<div
-        style={{
-          background: "#fff",
-          border: "1px solid #E8E8E8",
-          borderRadius: 12,
-          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-        }}
-      >
-        {orderedConnections.map((conn, i) => {
+      <div className="a-sec-t">
+        <h2>Sources</h2>
+        {typeof sourceLimit === "number" && planName && (
+          <span className="a-only-d" style={{ fontSize: 13, color: "var(--a-muted)" }}>
+            {usedSources} of {sourceLimit} data sources used on {planName}
+          </span>
+        )}
+      </div>
+
+      <div className="a-card a-clip a-divide">
+        {orderedConnections.map((conn) => {
           const s = STATUS_CONFIG[conn.status];
           return (
-            <div
-              key={conn.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 20,
-                padding: "20px 24px",
-                borderBottom: i < orderedConnections.length - 1 ? "1px solid #F3F3F3" : "none",
-                opacity: conn.status === "soon" ? 0.7 : 1,
-              }}
-            >
-              {/* Logo badge */}
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 9,
-                  background: "#F4F4F4",
-                  border: "1px solid #E8E8E8",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 16,
-                  fontWeight: 400,
-                  color: "#444",
-                  flexShrink: 0,
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                }}
-              >
-                {conn.logo}
-              </div>
-
-              {/* Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 3 }}>
-                  <span style={{ fontSize: 14, fontWeight: 400, color: "#111" }}>{conn.name}</span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 400,
-                      color: s.text,
-                      background: s.bg,
-                      borderRadius: 20,
-                      padding: "2px 8px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                    }}
-                  >
-                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.dot, display: "inline-block" }} />
-                    {s.label}
-                  </span>
+            <div key={conn.id} className="a-src-row">
+              <span className="a-tile lg">{conn.logo}</span>
+              <div className="a-src-info">
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 15 }}>{conn.name}</span>
+                  <span className="a-only-d"><Badge tone={s.tone}>{s.label}</Badge></span>
                 </div>
-                <p style={{ fontSize: 13, color: "#888", margin: 0, lineHeight: 1.5 }}>{conn.description}</p>
-                <p style={{ fontSize: 12, color: "#bbb", margin: "4px 0 0", fontFamily: "monospace" }}>{conn.meta}</p>
+                <div className="a-src-desc">{conn.description}</div>
+                <div className="a-src-meta">{conn.meta}</div>
               </div>
-
-              {/* Actions */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                {conn.status === "syncing" ? (
-                  // A job is running for this org. Configure/Sync are hidden rather
-                  // than just disabled, so there's nothing to click while indexing
-                  // is in flight — the row itself is the loading state.
-                  <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#1d4ed8" }}>
-                    <span className="spinner" />
-                    Syncing…
-                  </span>
-                ) : (
-                  <>
-                    {conn.syncable && <SyncButton />}
-                    {conn.status === "soon" ? (
-                      <NotifyButton
-                        integration={conn.id}
-                        initiallyNotified={notifiedIntegrations.includes(conn.id)}
-                      />
-                    ) : (
-                      <>
-                        {conn.oauthHref && (
-                          <Button href={conn.oauthHref} variant="accent-solid" size="sm">
-                            {conn.oauthLabel ?? "Connect"}
-                          </Button>
-                        )}
-                        {conn.actionHref ? (
-                          <Button href={conn.actionHref} variant="secondary" size="sm">
-                            {conn.actionLabel}
-                          </Button>
-                        ) : CONNECTOR_FIELDS[conn.id] ? (
-                          <ConfigureButton
-                            label={conn.actionLabel}
-                            destructive={conn.syncable}
-                            tooltip={
-                              conn.syncable
-                                ? "Replaces the current setup and re-indexes"
-                                : undefined
-                            }
-                            onClick={() => setConfiguring(conn.id)}
-                          />
-                        ) : null}
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
+              <span className="a-only-m a-src-badge"><Badge tone={s.tone}>{s.label}</Badge></span>
+              <div className="a-src-actions">{actionsFor(conn)}</div>
             </div>
           );
         })}

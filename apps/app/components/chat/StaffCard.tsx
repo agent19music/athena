@@ -1,3 +1,8 @@
+"use client";
+
+import { EnvelopeSimple } from "@phosphor-icons/react";
+import { Avatar } from "../athena/Orb";
+
 interface StaffCardProps {
   answer: string;
   staffName?: string;
@@ -5,6 +10,8 @@ interface StaffCardProps {
   staffDomain?: string;
   staffTitle?: string;
   staffDepartment?: string;
+  /** Optional photo; falls back to the seeded orb. */
+  staffImageUrl?: string | null;
 }
 
 export default function StaffCard({
@@ -14,128 +21,27 @@ export default function StaffCard({
   staffDomain,
   staffTitle,
   staffDepartment,
+  staffImageUrl,
 }: StaffCardProps) {
-  const initials = staffName
-    ? staffName
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-    : "?";
+  const firstName = staffName?.trim().split(/\s+/)[0];
+  const meta = staffTitle ? `${staffTitle}${staffDepartment ? ` · ${staffDepartment}` : ""}` : staffDepartment || staffDomain;
 
   return (
-    <div
-      style={{
-        background: "var(--card)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        padding: "var(--space-6)",
-        boxShadow: "var(--shadow-xs)",
-      }}
-    >
-      {/* No exact doc label */}
-      <p
-        style={{
-          fontSize: 13,
-          fontWeight: 400,
-          color: "var(--foreground-subtle)",
-          marginBottom: "var(--space-4)",
-          letterSpacing: "0.01em",
-        }}
-      >
-        No exact documentation found
-      </p>
+    <div className="a-ac a-ac-answer">
+      <div className="a-ac-k">No matching document</div>
+      <div className="a-ac-a ink" style={{ whiteSpace: "pre-wrap" }}>{answer}</div>
 
-      {/* Answer text */}
-      <p
-        style={{
-          fontSize: 15,
-          color: "var(--foreground)",
-          lineHeight: 1.7,
-          marginBottom: "var(--space-6)",
-        }}
-      >
-        {answer}
-      </p>
-
-      {/* Staff contact row */}
       {staffName && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "var(--space-4)",
-            background: "var(--inset-surface)",
-            borderRadius: "var(--radius-md)",
-            padding: "var(--space-4) var(--space-4)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-            {/* Avatar */}
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: "50%",
-                background: "var(--brand-olive)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--brand-cream)",
-                fontSize: 13,
-                fontWeight: 400,
-                flexShrink: 0,
-              }}
-            >
-              {initials}
-            </div>
-            <div>
-              <p
-                style={{
-                  fontSize: 14,
-                  fontWeight: 400,
-                  color: "var(--foreground)",
-                  lineHeight: 1.3,
-                }}
-              >
-                {staffName}
-              </p>
-              {(staffTitle || staffDepartment || staffDomain) && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    color: "var(--foreground-muted)",
-                    marginTop: 2,
-                  }}
-                >
-                  {staffTitle
-                    ? `${staffTitle}${staffDepartment ? ` · ${staffDepartment}` : ""}`
-                    : staffDomain}
-                </p>
-              )}
-            </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--a-line)", flexWrap: "wrap" }}>
+          <Avatar src={staffImageUrl} seed={staffEmail ?? staffName} size={36} alt={staffName} />
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <div style={{ fontSize: 14 }}>{staffName}</div>
+            {meta && <div style={{ fontSize: 12, color: "var(--a-muted)" }}>{meta}</div>}
           </div>
-
           {staffEmail && (
-            <a
-              href={`mailto:${staffEmail}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                height: 36,
-                borderRadius: 9999,
-                background: "var(--foreground)",
-                color: "var(--background)",
-                fontSize: 13,
-                fontWeight: 400,
-                padding: "0 16px",
-                textDecoration: "none",
-                flexShrink: 0,
-                transition: "opacity 200ms ease-out",
-              }}
-            >
-              Email
+            <a href={`mailto:${staffEmail}`} className="a-btn a-btn-secondary a-btn-sm">
+              <EnvelopeSimple size={14} />
+              Email {firstName}
             </a>
           )}
         </div>
