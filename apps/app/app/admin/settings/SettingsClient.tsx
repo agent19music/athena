@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { ArrowRight, Camera, PencilSimple, UploadSimple } from "@phosphor-icons/react";
 import { OrgLogo } from "../../../components/athena/Orb";
+import { ThemeControl } from "../../../components/athena/ThemeControl";
 
-function Row({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+function Row({ title, desc, wide, children }: { title: string; desc: string; wide?: boolean; children: React.ReactNode }) {
   return (
     <div className="a-set-row">
-      <div className="k">
+      <div className={wide ? "k wide" : "k"}>
         <div className="t">{title}</div>
         <div className="d">{desc}</div>
       </div>
@@ -159,16 +160,34 @@ function InlineNameEdit({ initialName }: { initialName: string }) {
 }
 
 export default function SettingsClient({
+  isAdmin,
   orgName,
   orgLogo,
   orgId,
 }: {
+  isAdmin: boolean;
   orgName: string;
   orgLogo: string | null;
   orgId?: string;
 }) {
+  const appearance = (
+    <Section label="Appearance">
+      <Row
+        wide
+        title="Theme"
+        desc="System default follows this device and updates if the device theme changes. Light or Dark stays until you change it."
+      >
+        <ThemeControl />
+      </Row>
+    </Section>
+  );
+
+  if (!isAdmin) return appearance;
+
   return (
     <>
+      {appearance}
+
       <Section label="Organisation">
         <Row title="Name" desc="Shown to everyone in your workspace.">
           <InlineNameEdit initialName={orgName} />

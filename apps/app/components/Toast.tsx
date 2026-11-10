@@ -39,7 +39,7 @@ export function Toast({ message, onDismiss, duration = 7000, tone = "warn" }: To
             type="button"
             onClick={onDismiss}
             aria-label="Dismiss"
-            style={{ flexShrink: 0, display: "flex", background: "transparent", border: "none", padding: 4, cursor: "pointer", color: "rgba(255,255,255,0.6)", borderRadius: 999 }}
+            style={{ flexShrink: 0, display: "flex", background: "transparent", border: "none", padding: 4, cursor: "pointer", color: "var(--a-toast-x)", borderRadius: 999 }}
           >
             <X size={14} />
           </button>

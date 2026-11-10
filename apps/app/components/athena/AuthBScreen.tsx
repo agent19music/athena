@@ -5,6 +5,8 @@ import { useSignIn } from "@clerk/nextjs/legacy";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
+import type { ResolvedTheme } from "@/lib/theme";
+import { useResolvedTheme } from "./ThemeProvider";
 
 const MARKETING_URL = "https://athena.uzskicorp.agency";
 
@@ -64,6 +66,84 @@ const clerkAppearance = {
   },
 };
 
+/** Dark twin of clerkAppearance (Doop TONEQO8FH4): borderless, no shadows. */
+const clerkAppearanceDark = {
+  variables: {
+    colorPrimary: "#F2F2F3",
+    colorPrimaryForeground: "#171717",
+    colorBackground: "#202021",
+    colorForeground: "#F2F2F3",
+    colorMutedForeground: "#A8A8AD",
+    colorMuted: "#2F2F30",
+    colorInput: "#252526",
+    colorInputForeground: "#F2F2F3",
+    colorNeutral: "#F2F2F3",
+    colorDanger: "#ED8078",
+    colorSuccess: "#5DCAA0",
+    colorWarning: "#E8B86D",
+    colorBorder: "transparent",
+    colorRing: "#F2F2F3",
+    colorShadow: "transparent",
+    colorModalBackdrop: "rgba(16, 16, 17, 0.64)",
+    borderRadius: "12px",
+    fontFamily: "var(--font-sans), system-ui, sans-serif",
+    fontFamilyButtons: "var(--font-sans), system-ui, sans-serif",
+    fontSize: "15px",
+  },
+  elements: {
+    ...clerkAppearance.elements,
+    headerTitle: { ...clerkAppearance.elements.headerTitle, color: "#F2F2F3" },
+    headerSubtitle: { fontSize: "14px", color: "#A8A8AD" },
+    formFieldLabel: { color: "#A8A8AD" },
+    formButtonPrimary: {
+      backgroundColor: "#F2F2F3",
+      color: "#171717",
+      fontSize: "15px",
+      fontWeight: "400",
+      borderRadius: "9999px",
+      height: "48px",
+      boxShadow: "none",
+      border: "0",
+      "&:hover": { backgroundColor: "#D8D8DC" },
+      "&:focus-visible": { outline: "2px solid #F2F2F3", outlineOffset: "2px" },
+    },
+    formFieldInput: {
+      borderRadius: "12px",
+      border: "0",
+      boxShadow: "none",
+      fontSize: "16px",
+      height: "44px",
+      background: "#252526",
+      color: "#F2F2F3",
+      "&:focus": { outline: "2px solid #F2F2F3", outlineOffset: "2px", boxShadow: "none" },
+    },
+    otpCodeFieldInput: { border: "0", boxShadow: "none", background: "#252526", color: "#F2F2F3" },
+    footerActionText: { color: "#A8A8AD" },
+    footerActionLink: { color: "#F2F2F3", fontWeight: "400" },
+    formResendCodeLink: { color: "#F2F2F3" },
+    identityPreview: { border: "0", background: "#252526", boxShadow: "none" },
+    identityPreviewText: { color: "#F2F2F3" },
+    identityPreviewEditButton: { color: "#F2F2F3" },
+    alternativeMethodsBlockButton: { border: "0", background: "#252526", color: "#F2F2F3", boxShadow: "none" },
+    dividerText: { color: "#919198" },
+    dividerLine: { background: "transparent" },
+    socialButtonsBlockButton: {
+      border: "0",
+      borderRadius: "9999px",
+      height: "48px",
+      background: "#252526",
+      boxShadow: "none",
+      "&:hover": { background: "#2A2A2B" },
+    },
+    socialButtonsBlockButtonText: { color: "#F2F2F3", fontWeight: "400" },
+    footer: { background: "transparent" },
+  },
+};
+
+function useClerkAppearance(serverTheme?: ResolvedTheme) {
+  return useResolvedTheme(serverTheme) === "dark" ? clerkAppearanceDark : clerkAppearance;
+}
+
 function clerkMessage(err: unknown): string {
   if (typeof err === "object" && err && "errors" in err) {
     const first = (err as { errors?: { longMessage?: string; message?: string }[] }).errors?.[0];
@@ -116,7 +196,7 @@ function BrandMark() {
   );
 }
 
-function AuthBForm() {
+function AuthBForm({ serverTheme }: { serverTheme?: ResolvedTheme }) {
   const router = useRouter();
   const { isLoaded, signIn, setActive } = useSignIn();
   const [email, setEmail] = useState("");
@@ -127,6 +207,7 @@ function AuthBForm() {
   const [handoff, setHandoff] = useState(false);
 
   const busy = pending !== "idle" || !isLoaded;
+  const appearance = useClerkAppearance(serverTheme);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -178,7 +259,7 @@ function AuthBForm() {
         <BrandMark />
         <div className="a-auth-clerk">
           <SignIn
-            appearance={clerkAppearance}
+            appearance={appearance}
             fallbackRedirectUrl="/dashboard"
             signUpUrl="/register"
           />
@@ -274,9 +355,10 @@ function loginMode(pathname: string | null): "start" | "sso-callback" | "continu
   return "start";
 }
 
-export function AuthBScreen() {
+export function AuthBScreen({ serverTheme }: { serverTheme?: ResolvedTheme } = {}) {
   const pathname = usePathname();
   const mode = useMemo(() => loginMode(pathname), [pathname]);
+  const appearance = useClerkAppearance(serverTheme);
 
   return (
     <main className="a-root a-auth">
@@ -294,14 +376,14 @@ export function AuthBScreen() {
               <BrandMark />
               <div className="a-auth-clerk">
                 <SignIn
-                  appearance={clerkAppearance}
+                  appearance={appearance}
                   fallbackRedirectUrl="/dashboard"
                   signUpUrl="/register"
                 />
               </div>
             </div>
           ) : (
-            <AuthBForm />
+            <AuthBForm serverTheme={serverTheme} />
           )}
         </div>
         <div className="a-auth-foot">

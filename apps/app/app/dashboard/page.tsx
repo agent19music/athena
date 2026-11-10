@@ -185,7 +185,7 @@ export default async function DashboardPage() {
             hint={sourceCount > 0 ? sourceTypes.map(sourceLabel).join(", ") : "No sources yet"}
           />
           <StatCard
-            icon={<CheckCircle size={16} weight="fill" color="var(--a-olive)" />}
+            icon={<CheckCircle size={16} weight="fill" color="var(--a-status-ok)" />}
             value="Active"
             label="Status"
             hint="All systems operational"

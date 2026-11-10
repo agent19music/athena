@@ -46,6 +46,7 @@ function ExcerptCallout({ excerpt, calloutRef }: { excerpt: string; calloutRef: 
   return (
     <div
       ref={calloutRef}
+      className="a-pv-callout"
       style={{
         background: "#FFFBEB",
         border: "1px solid #FEF3C7",
@@ -90,6 +91,7 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
 
   return (
     <div
+      className="a-pv-scrim"
       style={{
         position: "fixed",
         inset: 0,
@@ -103,6 +105,7 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        className="a-pv-sheet"
         style={{
           background: "#fff",
           borderRadius: 16,
@@ -117,6 +120,7 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
         onClick={(e) => e.stopPropagation()}
       >
         <div
+          className="a-pv-head"
           style={{
             display: "flex",
             alignItems: "center",
@@ -127,6 +131,7 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
           }}
         >
           <h2
+            className="a-pv-title"
             style={{
               fontSize: 15,
               fontWeight: 400,
@@ -139,23 +144,24 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
           >
             {data?.title ?? "Preview"}
           </h2>
-          <Button type="button" onClick={onClose} variant="ghost" size="icon" style={{ flexShrink: 0 }}>
+          <Button type="button" onClick={onClose} variant="ghost" size="icon" className="a-pv-close" aria-label="Close preview" style={{ flexShrink: 0 }}>
             <X size={16} />
           </Button>
         </div>
 
         <div style={{ padding: "20px 24px", overflowY: "auto" }}>
           {error && (
-            <p style={{ fontSize: 13, color: "#B91C1C" }}>{error}</p>
+            <p className="a-pv-err" style={{ fontSize: 13, color: "#B91C1C" }}>{error}</p>
           )}
           {!error && !data && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#888", fontSize: 13 }}>
+            <div className="a-pv-muted" style={{ display: "flex", alignItems: "center", gap: 10, color: "#888", fontSize: 13 }}>
               <span className="spinner" />
               Loading preview…
             </div>
           )}
           {parts && (
             <p
+              className="a-pv-text"
               style={{
                 fontSize: 14,
                 color: "#333",
@@ -168,6 +174,7 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
               {parts.match && (
                 <mark
                   ref={markRef}
+                  className="a-pv-mark"
                   style={{ background: "#FEF3C7", color: "#1a1a1a", borderRadius: 3, padding: "0 2px" }}
                 >
                   {parts.match}
@@ -179,7 +186,7 @@ export default function PreviewPanel({ docId, sourceType, excerpt, onClose }: Pr
           {data?.mode === "markdown" && (
             <>
               {excerpt && <ExcerptCallout excerpt={excerpt} calloutRef={calloutRef} />}
-              <div style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>
+              <div className="a-pv-text" style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}>
                 <ReactMarkdown>{data.content}</ReactMarkdown>
               </div>
             </>

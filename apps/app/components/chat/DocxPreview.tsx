@@ -34,11 +34,11 @@ export default function DocxPreview({ signedUrl }: Props) {
     return () => { cancelled = true; };
   }, [signedUrl]);
 
-  if (error) return <p style={{ fontSize: 13, color: "#B91C1C" }}>{error}</p>;
+  if (error) return <p className="a-pv-err" style={{ fontSize: 13, color: "#B91C1C" }}>{error}</p>;
 
   if (!html) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#888", fontSize: 13, padding: "40px 0" }}>
+      <div className="a-pv-muted" style={{ display: "flex", alignItems: "center", gap: 10, color: "#888", fontSize: 13, padding: "40px 0" }}>
         <span className="spinner" />
         Loading document…
       </div>
@@ -47,7 +47,7 @@ export default function DocxPreview({ signedUrl }: Props) {
 
   return (
     <div
-      className="docx-preview-body"
+      className="docx-preview-body a-pv-text"
       style={{ fontSize: 14, color: "#333", lineHeight: 1.7 }}
       dangerouslySetInnerHTML={{ __html: html }}
     />

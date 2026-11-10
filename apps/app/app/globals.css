@@ -590,29 +590,72 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-/* Dark mode — applied when data-theme="dark" is set (e.g. chat page, or future theme toggle) */
+/* Dark mode — applied when <html data-theme="dark"> (Athena appearance, see
+   lib/theme.ts). Mapped onto the Athena dark tokens (athena-ui.css /
+   Doop Z9mGI1Xiby): no pure black, no borders at rest, no shadows. */
 [data-theme="dark"] {
-  --background: #1a1a1a;
-  --surface: #242424;
-  --card: #2a2a2a;
-  --inset-surface: #1f1f1f;
-  --popover: #3a3a3a;
-  --foreground: #ededed;
-  --foreground-muted: #a1a1aa;
-  --foreground-subtle: #6b6b6b;
-  --border: rgba(255, 255, 255, 0.07);
-  --border-strong: #333333;
-  --hover-surface: #2f2f2f;
+  --background: #202021;
+  --surface: #202021;
+  --card: #252526;
+  --card-foreground: #f2f2f3;
+  --inset-surface: #202021;
+  --popover: #343435;
+  --popover-foreground: #f2f2f3;
+  --foreground: #f2f2f3;
+  --foreground-muted: #a8a8ad;
+  --foreground-subtle: #a8a8ad;
+  --border: transparent;
+  --border-strong: transparent;
+  --input: transparent;
+  --ring: #f2f2f3;
+  --hover-surface: #2a2a2b;
+  --accent: #2a2a2b;
+  --accent-foreground: #f2f2f3;
+  --primary: #f2f2f3;
+  --primary-foreground: #171717;
+  --secondary: #2f2f30;
+  --secondary-foreground: #f2f2f3;
+  --muted: #2f2f30;
+  --muted-foreground: #a8a8ad;
+  --destructive: #c73b32;
+  --sidebar: #202021;
+  --sidebar-foreground: #f2f2f3;
+  --sidebar-primary: #f2f2f3;
+  --sidebar-primary-foreground: #171717;
+  --sidebar-accent: #2f2f30;
+  --sidebar-accent-foreground: #f2f2f3;
+  --sidebar-border: transparent;
+  --sidebar-ring: #f2f2f3;
 
-  /* Brand colors adjusted for dark backgrounds */
-  --brand-olive: #b5b96a;
-  --brand-cream: #2c2c1a;
-  --brand-sand: #3a3820;
-  --brand-moss: #8a9060;
+  /* Brand colors adjusted for dark backgrounds (Athena olive / chip steps) */
+  --brand-olive: #8a9a4a;
+  --brand-cream: #25281c;
+  --brand-sand: #2f2f30;
+  --brand-moss: #8a9a4a;
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+}
+
+/* shadcn primitives (components/ui) and Clerk's own chrome: no shadows or
+   resting rings in dark. Focus-visible rings are left alone. */
+[data-theme="dark"] [data-slot="button"]:not(:focus-visible),
+[data-theme="dark"] [data-slot="input"]:not(:focus-visible),
+[data-theme="dark"] [data-slot="textarea"]:not(:focus-visible),
+[data-theme="dark"] [data-slot="input-group"]:not(:has(:focus-visible)),
+[data-theme="dark"] .cl-card,
+[data-theme="dark"] .cl-cardBox,
+[data-theme="dark"] .cl-socialButtonsBlockButton,
+[data-theme="dark"] .cl-formButtonPrimary,
+[data-theme="dark"] .cl-formFieldInput {
+  box-shadow: none !important;
+}
+[data-theme="dark"] [data-slot="input"],
+[data-theme="dark"] [data-slot="textarea"],
+[data-theme="dark"] [data-slot="input-group"] {
+  border-color: transparent;
+  background: #252526;
 }
 
 @theme inline {

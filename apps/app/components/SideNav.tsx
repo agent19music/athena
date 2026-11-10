@@ -43,6 +43,9 @@ export const ADMIN_ITEMS: NavItem[] = [
   { label: "Billing", href: "/admin/billing", icon: CreditCard },
 ];
 
+/** Members only get Settings (for Appearance); admins see it in the Admin group. */
+export const MEMBER_SETTINGS_ITEM = ADMIN_ITEMS.find((i) => i.href === "/admin/settings")!;
+
 export function isNavActive(pathname: string, href: string) {
   return href === "/dashboard" ? pathname === href : pathname.startsWith(href);
 }
@@ -181,6 +184,9 @@ export default function SideNav() {
       {MAIN_ITEMS.map((item) => (
         <NavLink key={item.href} item={item} active={isNavActive(pathname, item.href)} />
       ))}
+      {membership && !isAdmin && (
+        <NavLink item={MEMBER_SETTINGS_ITEM} active={isNavActive(pathname, MEMBER_SETTINGS_ITEM.href)} />
+      )}
 
       {isAdmin && (
         <>

@@ -9,7 +9,19 @@ export default async function SettingsPage() {
 
   if (!userId) redirect("/login");
   if (!orgId) redirect("/onboarding");
-  if (orgRole !== "org:admin") redirect("/dashboard");
+
+  // Appearance is a per-user preference, so every signed-in member can open
+  // Settings. Organisation, connection and upload rows stay admin-only.
+  if (orgRole !== "org:admin") {
+    return (
+      <DashboardShell>
+        <AppPage narrow>
+          <PageHeader title="Settings" sub="Choose whether Athena uses a light or dark theme." />
+          <SettingsClient isAdmin={false} orgName="" orgLogo={null} />
+        </AppPage>
+      </DashboardShell>
+    );
+  }
 
   let orgName = orgSlug?.replace(/-/g, " ") || "Organisation";
   let orgLogo: string | null = null;
@@ -28,8 +40,8 @@ export default async function SettingsPage() {
   return (
     <DashboardShell>
       <AppPage narrow>
-        <PageHeader title="Settings" sub="Organisation details and where Athena gets its knowledge." />
-        <SettingsClient orgName={orgName} orgLogo={orgLogo} orgId={orgId} />
+        <PageHeader title="Settings" sub="Your theme, organisation details and where Athena gets its knowledge." />
+        <SettingsClient isAdmin orgName={orgName} orgLogo={orgLogo} orgId={orgId} />
       </AppPage>
     </DashboardShell>
   );
