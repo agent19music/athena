@@ -127,7 +127,7 @@ export default function AnalyticsClient() {
       <div className="a-stats" style={{ marginBottom: 24 }}>
         <StatCard icon={<ChatTeardropText size={16} />} value={data.total_questions.toLocaleString()} label="Questions asked" hint="All time" />
         <StatCard
-          icon={<CheckCircle size={16} weight="fill" color="var(--a-olive)" />}
+          icon={<CheckCircle size={16} weight="fill" color="var(--a-status-ok)" />}
           value={`${answerRate}%`}
           label="Answered from docs"
           hint={`${answered.toLocaleString()} of ${data.total_questions.toLocaleString()} questions`}

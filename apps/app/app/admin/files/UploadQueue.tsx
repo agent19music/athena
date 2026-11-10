@@ -30,7 +30,7 @@ function statusLabel(item: QueueItem): string {
 }
 
 function StatusIcon({ status }: { status: QueueStatus }) {
-  if (status === "done") return <CheckCircle size={16} weight="fill" color="var(--a-olive)" />;
+  if (status === "done") return <CheckCircle size={16} weight="fill" color="var(--a-status-ok)" />;
   if (status === "chunk_failed" || status === "upload_failed") return <WarningCircle size={16} weight="fill" color="var(--a-danger)" />;
   return <ArrowsClockwise size={16} color="var(--a-muted)" className={status === "uploading" ? "a-spin" : undefined} />;
 }

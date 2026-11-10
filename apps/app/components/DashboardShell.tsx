@@ -15,7 +15,7 @@ import {
   X,
   type Icon,
 } from "@phosphor-icons/react";
-import SideNav, { ADMIN_ITEMS, isNavActive, SignOutDialog } from "./SideNav";
+import SideNav, { ADMIN_ITEMS, isNavActive, MEMBER_SETTINGS_ITEM, SignOutDialog } from "./SideNav";
 import { OrgLogo } from "./athena/Orb";
 
 const TABS: { label: string; href: string; icon: Icon; admin?: boolean }[] = [
@@ -35,7 +35,7 @@ function MoreSheet({ open, isAdmin, onClose, onSignOut }: { open: boolean; isAdm
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
   if (!open) return null;
-  const items = ADMIN_ITEMS.filter((i) => MORE_HREFS.includes(i.href));
+  const items = isAdmin ? ADMIN_ITEMS.filter((i) => MORE_HREFS.includes(i.href)) : [MEMBER_SETTINGS_ITEM];
   return (
     <div className="a-scrim sheet" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="a-sheet" role="dialog" aria-modal="true" aria-label="More">
@@ -45,7 +45,7 @@ function MoreSheet({ open, isAdmin, onClose, onSignOut }: { open: boolean; isAdm
             <X size={16} color="var(--a-ink)" />
           </button>
         </div>
-        {isAdmin && items.map((item) => {
+        {items.map((item) => {
           const I = item.icon;
           return (
             <Link key={item.href} href={item.href} className="a-sheet-row" onClick={onClose}>

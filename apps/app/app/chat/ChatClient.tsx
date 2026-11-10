@@ -109,6 +109,9 @@ export default function ChatClient({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  // The history column stays hidden until the first fetch settles, so a
+  // person with no conversations never sees an empty list flash in.
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loadingThread, setLoadingThread] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -131,6 +134,8 @@ export default function ChatClient({
       if (Array.isArray(data)) setConversations(data);
     } catch {
       /* non-fatal — sidebar just stays as-is */
+    } finally {
+      setConversationsLoaded(true);
     }
   }, []);
 
@@ -173,6 +178,9 @@ export default function ChatClient({
       const res = await fetch(`${API_URL}/conversations/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       setConversations((prev) => prev.filter((c) => c.id !== id));
+      // Deleting the last one removes the history column; don't leave the
+      // mobile drawer flagged open for when it comes back.
+      if (conversations.every((c) => c.id === id)) setMobileHistoryOpen(false);
       if (id === activeId) newChat();
     } catch {
       setToast("Couldn't delete that conversation. Try again.");
@@ -235,6 +243,9 @@ export default function ChatClient({
   }, [initialQuery]);
 
   const isEmpty = messages.length === 0 && !loadingThread && !loading;
+  // No history yet: the page is only the centred empty state and composer.
+  const hasHistory = conversationsLoaded && conversations.length > 0;
+  const showThreadHead = hasHistory || !!activeId || !isEmpty;
   const active = conversations.find((c) => c.id === activeId) ?? null;
   const title = active?.title ?? (activeId ? (messages.find((m) => m.role === "user") as { text?: string } | undefined)?.text ?? "Conversation" : "New chat");
 
@@ -249,87 +260,88 @@ export default function ChatClient({
   return (
     <DashboardShell>
       <div className="a-chat">
-        <aside className={`a-convos${mobileHistoryOpen ? " open" : ""}`} aria-label="Conversations">
-          <div className="a-convos-head" style={{ gap: 8 }}>
-            <button type="button" className="a-btn a-btn-primary" style={{ flex: 1 }} onClick={newChat}>
-              <Plus size={14} />
-              New chat
-            </button>
-            {mobileHistoryOpen && (
-              <button type="button" className="a-icon-btn" aria-label="Close history" onClick={() => setMobileHistoryOpen(false)}>
-                <X size={16} />
+        {hasHistory && (
+          <aside className={`a-convos${mobileHistoryOpen ? " open" : ""}`} aria-label="Conversations">
+            <div className="a-convos-head" style={{ gap: 8 }}>
+              <button type="button" className="a-btn a-btn-primary" style={{ flex: 1 }} onClick={newChat}>
+                <Plus size={14} />
+                New chat
               </button>
-            )}
-          </div>
-          <div className="a-convos-list">
-            {conversations.length === 0 && (
-              <p style={{ fontSize: 13, color: "var(--a-muted)", padding: "6px 10px", lineHeight: 1.5 }}>
-                Your conversations will appear here.
-              </p>
-            )}
-            {GROUP_ORDER.filter((g) => grouped.has(g)).map((g) => (
-              <div key={g} style={{ marginBottom: 18 }}>
-                <div className="a-group" style={{ margin: "6px 0" }}>{g}</div>
-                {grouped.get(g)!.map((c) => {
-                  const isActive = c.id === activeId;
-                  return (
-                    <div
-                      key={c.id}
-                      className="a-convo"
-                      aria-current={isActive}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openConversation(c.id)}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openConversation(c.id); } }}
-                    >
-                      <span className="t">{c.title}</span>
-                      <button
-                        type="button"
-                        className="a-icon-btn sm bare"
-                        aria-label="Delete conversation"
-                        onClick={(e) => { e.stopPropagation(); setPendingDelete(c); }}
+              {mobileHistoryOpen && (
+                <button type="button" className="a-icon-btn" aria-label="Close history" onClick={() => setMobileHistoryOpen(false)}>
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            <div className="a-convos-list">
+              {GROUP_ORDER.filter((g) => grouped.has(g)).map((g) => (
+                <div key={g} style={{ marginBottom: 18 }}>
+                  <div className="a-group" style={{ margin: "6px 0" }}>{g}</div>
+                  {grouped.get(g)!.map((c) => {
+                    const isActive = c.id === activeId;
+                    return (
+                      <div
+                        key={c.id}
+                        className="a-convo"
+                        aria-current={isActive}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openConversation(c.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openConversation(c.id); } }}
                       >
-                        <Trash size={14} color="var(--a-danger)" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </aside>
+                        <span className="t">{c.title}</span>
+                        <button
+                          type="button"
+                          className="a-icon-btn sm bare"
+                          aria-label="Delete conversation"
+                          onClick={(e) => { e.stopPropagation(); setPendingDelete(c); }}
+                        >
+                          <Trash size={14} color="var(--a-danger)" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </aside>
+        )}
 
         <section className="a-thread">
-          <div className="a-thread-head">
-            <span className="a-ellipsis" style={{ fontSize: 14, minWidth: 0 }}>{title}</span>
-            {active ? (
-              <span style={{ fontSize: 12, color: "var(--a-muted)", flexShrink: 0 }}>{groupLabel(active.updated_at)}</span>
-            ) : !activeId && typeof sourceCount === "number" && sourceCount > 0 ? (
-              <span className="a-badge">{sourceCount} source{sourceCount === 1 ? "" : "s"} connected</span>
-            ) : null}
-            <span style={{ flex: 1 }} />
-            {active && (
-              <button type="button" className="a-btn a-btn-danger-quiet a-btn-sm" onClick={() => setPendingDelete(active)}>
-                <Trash size={14} />
-                Delete
-              </button>
-            )}
-          </div>
+          {showThreadHead && (
+            <div className="a-thread-head">
+              <span className="a-ellipsis" style={{ fontSize: 14, minWidth: 0 }}>{title}</span>
+              {active ? (
+                <span style={{ fontSize: 12, color: "var(--a-muted)", flexShrink: 0 }}>{groupLabel(active.updated_at)}</span>
+              ) : !activeId && typeof sourceCount === "number" && sourceCount > 0 ? (
+                <span className="a-badge">{sourceCount} source{sourceCount === 1 ? "" : "s"} connected</span>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              {active && (
+                <button type="button" className="a-btn a-btn-danger-quiet a-btn-sm" onClick={() => setPendingDelete(active)}>
+                  <Trash size={14} />
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
 
-          <div className="a-thread-m-head">
-            <button type="button" className="a-icon-btn sm bare" aria-label="Conversation history" onClick={() => setMobileHistoryOpen(true)}>
-              <ClockCounterClockwise size={18} color="var(--a-ink)" />
-            </button>
-            <span className="a-ellipsis" style={{ flex: 1, fontSize: 14 }}>{title}</span>
-            {active && (
-              <button type="button" className="a-icon-btn sm bare" aria-label="Delete conversation" onClick={() => setPendingDelete(active)}>
-                <Trash size={16} color="var(--a-danger)" />
+          {showThreadHead && (
+            <div className="a-thread-m-head">
+              <button type="button" className="a-icon-btn sm bare" aria-label="Conversation history" onClick={() => setMobileHistoryOpen(true)}>
+                <ClockCounterClockwise size={18} color="var(--a-ink)" />
               </button>
-            )}
-            <button type="button" className="a-icon-btn sm bare" aria-label="New chat" onClick={newChat}>
-              <Plus size={18} color="var(--a-ink)" />
-            </button>
-          </div>
+              <span className="a-ellipsis" style={{ flex: 1, fontSize: 14 }}>{title}</span>
+              {active && (
+                <button type="button" className="a-icon-btn sm bare" aria-label="Delete conversation" onClick={() => setPendingDelete(active)}>
+                  <Trash size={16} color="var(--a-danger)" />
+                </button>
+              )}
+              <button type="button" className="a-icon-btn sm bare" aria-label="New chat" onClick={newChat}>
+                <Plus size={18} color="var(--a-ink)" />
+              </button>
+            </div>
+          )}
 
           <div className={`a-thread-body${isEmpty ? " empty" : ""}`}>
             {isEmpty ? (

@@ -117,7 +117,7 @@ function RedeemPanel({ onRedeemed }: { onRedeemed: (e: BillingEntitlement) => vo
         </button>
       </form>
       {error && <p style={{ fontSize: 13, color: "var(--a-danger)", marginTop: 10 }}>{error}</p>}
-      {ok && <p style={{ fontSize: 13, color: "var(--a-olive)", marginTop: 10 }}>{ok}</p>}
+      {ok && <p style={{ fontSize: 13, color: "var(--a-status-ok)", marginTop: 10 }}>{ok}</p>}
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "./athena-ui.css";
 import { cn } from "@/lib/utils";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { ThemeProvider } from "@/components/athena/ThemeProvider";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
@@ -61,7 +63,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#ffffff",
+  // Follows the device by default; ThemeProvider pins both tags to the
+  // applied sheet when the user picks Light or Dark.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F9F9FA" },
+    { media: "(prefers-color-scheme: dark)", color: "#202021" },
+  ],
 };
 
 export default function RootLayout({
@@ -69,8 +76,14 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={cn("font-sans", geist.variable, geistMono.variable)} data-theme="light" style={{ colorScheme: "light" }}>
-        <body>{children}</body>
+      {/* data-theme / data-theme-pref are set before first paint by THEME_INIT_SCRIPT (see lib/theme.ts). */}
+      <html lang="en" className={cn("font-sans", geist.variable, geistMono.variable)} suppressHydrationWarning>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        </head>
+        <body>
+          <ThemeProvider>{children}</ThemeProvider>
+        </body>
         <Analytics />
         <GoogleAnalytics gaId="G-NFHB1M7VJY" />
       </html>

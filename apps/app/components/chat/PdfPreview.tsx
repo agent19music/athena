@@ -67,7 +67,7 @@ export default function PdfPreview({ signedUrl, pageCount, excerpt }: Props) {
           ) : undefined}
         />
       </Document>
-      <p style={{ fontSize: 12, color: "#999", margin: 0 }}>
+      <p className="a-pv-muted" style={{ fontSize: 12, color: "#999", margin: 0 }}>
         Page {pageNumber} of {pageCount}
         {!searched && " · locating the cited passage…"}
       </p>
@@ -77,7 +77,7 @@ export default function PdfPreview({ signedUrl, pageCount, excerpt }: Props) {
 
 function PdfLoading() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#888", fontSize: 13, padding: "40px 0" }}>
+    <div className="a-pv-muted" style={{ display: "flex", alignItems: "center", gap: 10, color: "#888", fontSize: 13, padding: "40px 0" }}>
       <span className="spinner" />
       Loading document…
     </div>
